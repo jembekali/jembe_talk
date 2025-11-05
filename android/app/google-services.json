@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "296013157420",
+    "project_id": "jembe-talk",
+    "storage_bucket": "jembe-talk.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:296013157420:android:5f7d20a6ab639c4e5aed89",
+        "android_client_info": {
+          "package_name": "com.example.jembe_talk"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDjOy1OTJoKg-Ts8QfCZm9cIWJRz5LXnS0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -1,0 +1,40 @@
+# Miscellaneous
+*.class
+*.log
+*.pyc
+*.swp
+.DS_Store
+.atom/
+.buildlog/
+.history
+.svn/
+
+# Kompilat- und Build-Verzeichnisse
+/build/
+.dart_tool/
+.idea/
+
+# Flutter-spezifische Dateien
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+/ios/Pods/
+/ios/Flutter/App.framework
+/ios/Flutter/engine.framework
+/ios/Flutter/flutter_assets/
+/ios/Runner/GeneratedPluginRegistrant.*
+/android/key.properties
+/android/local.properties
+/android/.gradle/
+/android/app/src/main/gen/
+/android/app/build/
+/android/gradle/
+/android/gradlew
+/android/gradlew.bat
+
+# IDE-spezifische Dateien
+*.iml
+*.ipr
+*.iws
