@@ -1,4 +1,4 @@
-// Fayili: lib/dame_game_logic.dart (VERSION NSHYA IRIMO AMATEGEKO YO KURYA)
+// lib/dame_game_logic.dart (YAKOSOWE KURI 10x10)
 
 import 'dart:math';
 
@@ -24,18 +24,19 @@ class DameGameLogic {
   List<DameMove> forcedCaptureMoves = [];
   
   final int myPlayerNumber;
+  final int boardSize; 
 
-  DameGameLogic({required this.myPlayerNumber});
+  DameGameLogic({required this.myPlayerNumber, this.boardSize = 10});
 
   void initializeBoard(dynamic boardData) {
-    List<List<dynamic>> tempList = List.generate(8, (_) => List.filled(8, null));
+    List<List<dynamic>> tempList = List.generate(boardSize, (_) => List.filled(boardSize, null));
 
     if (boardData is List) {
-      for (int i = 0; i < boardData.length; i++) {
+      for (int i = 0; i < boardData.length && i < boardSize; i++) {
         if (boardData[i] is List) { tempList[i] = List.from(boardData[i]); }
       }
     } else if (boardData is Map) {
-      for (int i = 0; i < 8; i++) {
+      for (int i = 0; i < boardSize; i++) {
         if (boardData[i.toString()] is List) { tempList[i] = List.from(boardData[i.toString()]); }
       }
     }
@@ -55,7 +56,6 @@ class DameGameLogic {
     checkForcedMoves();
   }
 
-  // <<< IMPINDUKA NYAMUKURU YABEREYE MURI IYI FUNCTION >>>
   void checkForcedMoves() {
     List<DameMove> allCaptures = _getAllCaptureMovesForPlayer(myPlayerNumber);
 
@@ -64,16 +64,13 @@ class DameGameLogic {
       return;
     }
 
-    // Tuzabika hano inzira ndende kuri buri gisasu
     Map<String, int> captureChainLengths = {};
-    // Tuzabika hano niba igisasu ari King cyangwa Man
     Map<String, bool> isKingMap = {};
 
-    for (int r = 0; r < 8; r++) {
-      for (int c = 0; c < 8; c++) {
+    for (int r = 0; r < boardSize; r++) {
+      for (int c = 0; c < boardSize; c++) {
         DamePiece? piece = board[r][c];
         if (piece != null && piece.player == myPlayerNumber) {
-          // Kuri buri gisasu, barira inzira ndende gishobora kurya
           int chainLength = _calculateMaxCaptureChain(r, c, board);
           if (chainLength > 0) {
             String pieceId = "$r-$c";
@@ -92,7 +89,6 @@ class DameGameLogic {
     int maxKingCaptures = 0;
     int maxManCaptures = 0;
 
-    // Menya inzira ndende muri rusange kuri King no kuri Man
     captureChainLengths.forEach((pieceId, length) {
       if (isKingMap[pieceId] == true) {
         if (length > maxKingCaptures) maxKingCaptures = length;
@@ -101,25 +97,19 @@ class DameGameLogic {
       }
     });
 
-    int overallMaxCaptures = max(maxKingCaptures, maxManCaptures);
     List<DameMove> finalForcedMoves = [];
-
-    // Gushyira mu bikorwa amategeko
+    
     if (maxManCaptures > maxKingCaptures) {
-      // ITEGEKO #1: Man arusha King kurya, niyo itegetswe
       finalForcedMoves = _getMovesForPiecesWithMaxLength(captureChainLengths, maxManCaptures, false, isKingMap);
     } else if (maxKingCaptures > 0) {
-      // ITEGEKO #2: King afite aho arya (kandi hangana/haruta ah'abandi), niyo itegetswe
       finalForcedMoves = _getMovesForPiecesWithMaxLength(captureChainLengths, maxKingCaptures, true, isKingMap);
     } else {
-      // Nta King ushobora kurya, dukinisha Man ufite inzira ndende
       finalForcedMoves = _getMovesForPiecesWithMaxLength(captureChainLengths, maxManCaptures, false, isKingMap);
     }
 
     forcedCaptureMoves = finalForcedMoves;
   }
   
-  // Function nshya ifasha gutoranya inzira z'itegeko gusa
   List<DameMove> _getMovesForPiecesWithMaxLength(Map<String, int> lengths, int maxLength, bool isKing, Map<String, bool> isKingMap) {
       List<DameMove> moves = [];
       lengths.forEach((pieceId, length) {
@@ -133,7 +123,6 @@ class DameGameLogic {
       return moves;
   }
   
-  // Function nshya ibara inzira yo kurya kuri buri gisasu
   int _calculateMaxCaptureChain(int startRow, int startCol, List<List<DamePiece?>> currentBoard) {
       DamePiece? piece = currentBoard[startRow][startCol];
       if (piece == null) return 0;
@@ -145,15 +134,12 @@ class DameGameLogic {
 
       int maxCaptures = 0;
       for (DameMove move in firstLevelCaptures) {
-          // Kora kopi y'ikibaho kugira ngo utagihindura
           List<List<DamePiece?>> nextBoard = currentBoard.map((row) => List<DamePiece?>.from(row)).toList();
           
-          // Kina umwanya kuri iyo kopi
           nextBoard[move.toRow][move.toCol] = piece;
           nextBoard[move.fromRow][move.fromCol] = null;
           nextBoard[move.jumpedRow!][move.jumpedCol!] = null;
           
-          // Komeza ubare uhereye aho kigeze
           int capturesInThisChain = 1 + _calculateMaxCaptureChain(move.toRow, move.toCol, nextBoard);
           if (capturesInThisChain > maxCaptures) {
               maxCaptures = capturesInThisChain;
@@ -218,16 +204,15 @@ class DameGameLogic {
       wasCapture = true;
     }
 
-    if ((myPlayerNumber == 1 && move.toRow == 0) || (myPlayerNumber == 2 && move.toRow == 7)) {
+    if ((myPlayerNumber == 1 && move.toRow == 0) || (myPlayerNumber == 2 && move.toRow == boardSize - 1)) {
       piece.type = DamePieceType.king;
     }
 
     if (wasCapture) {
       List<DameMove> nextCaptures = _getCaptureMovesForPiece(move.toRow, move.toCol, piece, myPlayerNumber);
       
-      // Nyuma yo kurya, ongera urebe niba hakurikijwe amategeko
       if (nextCaptures.isNotEmpty) {
-        checkForcedMoves(); // Iyi izagena niba hakiri andi mategeko yo gukurikiza
+        checkForcedMoves();
         
         List<DameMove> nextLegalCaptures = forcedCaptureMoves.where((m) => m.fromRow == move.toRow && m.fromCol == move.toCol).toList();
         
@@ -251,7 +236,6 @@ class DameGameLogic {
     selectedCol = null;
     possibleMoves = [];
     isMultiJump = false;
-    // Nyuma y'uko umwanya urangiye, ongera urebe amategeko y'undi mukinnyi
     checkForcedMoves();
   }
   
@@ -275,8 +259,8 @@ class DameGameLogic {
     List<DameMove> captureMoves = _getAllCaptureMovesForPlayer(playerNumber);
     if (captureMoves.isNotEmpty) return captureMoves;
     
-    for (int r = 0; r < 8; r++) {
-      for (int c = 0; c < 8; c++) {
+    for (int r = 0; r < boardSize; r++) {
+      for (int c = 0; c < boardSize; c++) {
         DamePiece? piece = board[r][c];
         if (piece != null && piece.player == playerNumber) {
           allMoves.addAll(
@@ -298,7 +282,7 @@ class DameGameLogic {
     for (var d in deltas) {
       int toRow = row + d[0];
       int toCol = col + d[1];
-      if (toRow >= 0 && toRow < 8 && toCol >= 0 && toCol < 8 && board[toRow][toCol] == null) {
+      if (toRow >= 0 && toRow < boardSize && toCol >= 0 && toCol < boardSize && board[toRow][toCol] == null) {
         moves.add(DameMove(row, col, toRow, toCol));
       }
     }
@@ -311,7 +295,7 @@ class DameGameLogic {
     for (var d in directions) {
       int nextRow = row + d[0];
       int nextCol = col + d[1];
-      while (nextRow >= 0 && nextRow < 8 && nextCol >= 0 && nextCol < 8) {
+      while (nextRow >= 0 && nextRow < boardSize && nextCol >= 0 && nextCol < boardSize) {
         if (board[nextRow][nextCol] == null) {
           moves.add(DameMove(row, col, nextRow, nextCol));
         } else {
@@ -326,8 +310,8 @@ class DameGameLogic {
 
   List<DameMove> _getAllCaptureMovesForPlayer(int playerNumber) {
     List<DameMove> allCaptures = [];
-    for (int r = 0; r < 8; r++) {
-      for (int c = 0; c < 8; c++) {
+    for (int r = 0; r < boardSize; r++) {
+      for (int c = 0; c < boardSize; c++) {
         DamePiece? piece = board[r][c];
         if (piece != null && piece.player == playerNumber) {
           allCaptures.addAll(_getCaptureMovesForPiece(r, c, piece, playerNumber));
@@ -350,10 +334,10 @@ class DameGameLogic {
       int opponentRow = row + d[0];
       int opponentCol = col + d[1];
       int landingRow = row + 2 * d[0];
-      int landingCol = col + 2 * d[0];
+      int landingCol = col + 2 * d[1];
 
-      if (landingRow >= 0 && landingRow < 8 && landingCol >= 0 && landingCol < 8) {
-        DamePiece? opponent = board.isNotEmpty && opponentRow >= 0 && opponentRow < 8 && opponentCol >= 0 && opponentCol < 8 ? board[opponentRow][opponentCol] : null;
+      if (landingRow >= 0 && landingRow < boardSize && landingCol >= 0 && landingCol < boardSize) {
+        DamePiece? opponent = board.isNotEmpty && opponentRow >= 0 && opponentRow < boardSize && opponentCol >= 0 && opponentCol < boardSize ? board[opponentRow][opponentCol] : null;
         if (opponent != null && opponent.player != playerNumber && board[landingRow][landingCol] == null) {
           moves.add(DameMove(row, col, landingRow, landingCol, opponentRow, opponentCol));
         }
@@ -370,7 +354,7 @@ class DameGameLogic {
       int nextRow = row + d[0];
       int nextCol = col + d[1];
 
-      while (nextRow >= 0 && nextRow < 8 && nextCol >= 0 && nextCol < 8) {
+      while (nextRow >= 0 && nextRow < boardSize && nextCol >= 0 && nextCol < boardSize) {
         if (board[nextRow][nextCol] != null) {
           if (board[nextRow][nextCol]!.player != playerNumber) {
             opponentRow = nextRow;
@@ -385,7 +369,7 @@ class DameGameLogic {
       if (opponentRow != -1) {
         int landingRow = opponentRow + d[0];
         int landingCol = opponentCol + d[1];
-        while (landingRow >= 0 && landingRow < 8 && landingCol >= 0 && landingCol < 8) {
+        while (landingRow >= 0 && landingRow < boardSize && landingCol >= 0 && landingCol < boardSize) {
           if (board[landingRow][landingCol] == null) {
             moves.add(DameMove(row, col, landingRow, landingCol, opponentRow, opponentCol));
           } else {

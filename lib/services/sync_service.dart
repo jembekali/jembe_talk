@@ -22,12 +22,11 @@ class SyncService {
   final StreamController<Map<String, dynamic>> _progressController = StreamController.broadcast();
   Stream<Map<String, dynamic>> get uploadProgressStream => _progressController.stream;
 
-  // =========================================================================
-  // ----> IKI NI CYO GICE GISHYA TWONGEYEMO <----
-  // Iyi StreamController izadufasha kumenyesha ChatScreen ko hari ubutumwa bwahinduwe na FCM
-  // =========================================================================
   final StreamController<String> _uiMessageUpdateController = StreamController.broadcast();
   Stream<String> get uiMessageUpdateStream => _uiMessageUpdateController.stream;
+
+  // <<< IMPINDUKA #1: Iyi ni yo izobika imirimo iriko irakorwa >>>
+  final Map<String, UploadTask> _activeUploadTasks = {};
 
   void notifyUIMessageUpdate(String messageId) {
     if (!_uiMessageUpdateController.isClosed) {
@@ -65,6 +64,34 @@ class SyncService {
     _connectivitySubscription?.cancel();
   }
   
+  // <<< IMPINDUKA #2: Functions nshasha zo guhagarika no kubandanya >>>
+  Future<void> pauseUpload(String messageId) async {
+    final task = _activeUploadTasks[messageId];
+    if (task != null) {
+      bool success = await task.pause();
+      if (success) {
+        await _dbHelper.updateMessageStatus(messageId, 'paused');
+        updateUploadProgress(messageId, null); // Guhagarika progress bar
+        log("Upload for $messageId paused.");
+      }
+    }
+  }
+
+  Future<void> resumeUpload(String messageId) async {
+    final task = _activeUploadTasks[messageId];
+    if (task != null) {
+      bool success = await task.resume();
+      if (success) {
+        await _dbHelper.updateMessageStatus(messageId, 'uploading');
+        log("Upload for $messageId resumed.");
+      }
+    } else {
+      // Niba umurimo utari ugihari (app yari yafunzwe), dutanguza bundi busha
+      log("Task for $messageId not found in memory, re-triggering sync.");
+      triggerSync();
+    }
+  }
+
   Future<void> syncPendingMessages() async {
     if (_isSyncingMessages) {
       log("[SyncService] Indi sync y'ubutumwa iracyakora, turarinze.");
@@ -99,9 +126,12 @@ class SyncService {
               await _dbHelper.updateMessageStatus(messageId, 'failed');
               continue;
             }
+            
+            // Igenzura ry'inyongera: Niba turiko turarungika canke twahagaritse, ntidusubira gutangura
+            if (_activeUploadTasks.containsKey(messageId) || messageData[DatabaseHelper.columnStatus] == 'paused') continue;
 
             log("[SyncService] Ifayiri ibonetse. Ndatangiye kohereza kuri: '$storagePath'");
-            updateUploadProgress(messageId, 0.0);
+            await _dbHelper.updateMessageStatus(messageId, 'uploading');
 
             File file = File(localPath);
             final ref = _storage.ref().child(storagePath);
@@ -112,11 +142,12 @@ class SyncService {
                 customMetadata: {
                   'chatRoomID': messageData[DatabaseHelper.columnChatRoomID],
                   'messageID': messageId,
-                  // <<< IMPINDUKA Y'INGENZI CYANE IRI HANO: Twongereyemo receiverID >>>
                   'receiverID': messageData[DatabaseHelper.columnReceiverID],
                 },
               ),
             );
+
+            _activeUploadTasks[messageId] = uploadTask;
 
             uploadTask.snapshotEvents.listen((TaskSnapshot snapshot) {
               final double progress = snapshot.bytesTransferred / snapshot.totalBytes;
@@ -150,9 +181,16 @@ class SyncService {
           log("[SyncService] Ubutumwa '$messageId' rurungitswe neza kuri Firestore.");
 
         } catch (e) {
-          log("!!!!!! Habaye ikibazo mu kurungika ubutumwa '$messageId': $e");
-          await _dbHelper.updateMessageStatus(messageId, 'failed');
-          updateUploadProgress(messageId, null);
+          if (e is FirebaseException && e.code == 'canceled') {
+            log("Upload for $messageId was canceled by user.");
+            // Nta kintu dukora, status isigara ari 'paused'
+          } else {
+            log("!!!!!! Habaye ikibazo mu kurungika ubutumwa '$messageId': $e");
+            await _dbHelper.updateMessageStatus(messageId, 'failed');
+            updateUploadProgress(messageId, null);
+          }
+        } finally {
+          _activeUploadTasks.remove(messageId);
         }
       }
     } finally {
@@ -168,7 +206,6 @@ class SyncService {
   void dispose() {
     _connectivitySubscription?.cancel();
     _progressController.close();
-    // <<< NI NGOMBWA GUFUNGA NA STREAM CONTROLLER NSHYA >>>
     _uiMessageUpdateController.close();
   }
 }

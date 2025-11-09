@@ -135,7 +135,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   _buildSettingsItem(icon: Icons.chat, title: "Ibiganiro", subtitle: "Amabara, amafoto y'inyuma", onTap: () => Navigator.push(context, SlideRightPageRoute(page: const ChatSettingsScreen()))),
                   _buildSettingsItem(icon: Icons.notifications, title: "Udusonere", subtitle: "Amajwi y'ubutumwa", onTap: () => Navigator.push(context, SlideRightPageRoute(page: const NotificationSettingsScreen()))),
                   _buildSettingsItem(icon: Icons.language, title: "Ururimi", subtitle: "Kirundi (Ururimi gw'igihugu)", onTap: () => Navigator.push(context, SlideRightPageRoute(page: const LanguageSettingsScreen()))),
-                  _buildSettingsItem(icon: Icons.storage, title: "Ububiko bw'Amakuru", subtitle: "Ikoreshwa rya enterineti...", onTap: () => Navigator.push(context, SlideRightPageRoute(page: const StorageSettingsScreen()))),
+                  _buildSettingsItem(icon: Icons.storage, title: "Ububiko bw'Amakuru", subtitle: "Ikoreshwa rya Internet...", onTap: () => Navigator.push(context, SlideRightPageRoute(page: const StorageSettingsScreen()))),
                   _buildSettingsItem(
                       icon: Icons.help_outline,
                       title: "Ubufasha",

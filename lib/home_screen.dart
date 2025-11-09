@@ -1,21 +1,25 @@
-// lib/home_screen.dart (VERSION NSHYA YUZUYE 100% KANDI YIHUTA)
+// lib/home_screen.dart (YAKOSOWE BURUNDU KURI PRESENCE)
 
 import 'package:jembe_talk/services/firebase_service.dart';
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:ui';
 import 'package:animations/animations.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_staggered_animations/flutter_staggered_animations.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:intl/intl.dart';
 import 'package:jembe_talk/loading_screen.dart';
 import 'package:jembe_talk/network_video_player.dart';
 import 'package:jembe_talk/services/database_helper.dart';
 import 'package:jembe_talk/services/message_status_service.dart';
+import 'package:jembe_talk/services/presence_service.dart';
 import 'package:jembe_talk/star_day_screen.dart';
 import 'package:jembe_talk/tangaza_star/tangaza_star_screen.dart';
 import 'package:jembe_talk/unified_notifications_screen.dart';
@@ -44,7 +48,16 @@ class _ChatData {
   final String? photoUrl;
   final String? phoneNumber;
   final int lastMessageTimestamp;
-  _ChatData({required this.userId, required this.displayName, this.photoUrl, this.phoneNumber, required this.lastMessageTimestamp});
+  final List<dynamic> blockedUsers;
+
+  _ChatData({
+    required this.userId, 
+    required this.displayName, 
+    this.photoUrl, 
+    this.phoneNumber, 
+    required this.lastMessageTimestamp,
+    this.blockedUsers = const [],
+  });
 }
 
 class HomeScreen extends StatefulWidget {
@@ -73,6 +86,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver, Si
   Stream<int>? _totalUnreadChatsCountStream;
   
   StreamSubscription? _allMessagesSubscription;
+  StreamSubscription? _myBlockedUsersSubscription;
 
   late AnimationController _loveStarController;
   late Animation<double> _loveStarAnimation;
@@ -82,6 +96,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver, Si
   List<String> _tabOrder = [];
   final List<String> _defaultTabOrder = ['chats', 'contacts', 'tv', 'settings'];
   bool _tabOrderLoaded = false;
+  
+  List<dynamic> _myBlockedUsers = [];
+
+  final PresenceService _presenceService = PresenceService();
 
   @override
   void initState() {
@@ -91,6 +109,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver, Si
 
     _pageController = PageController(initialPage: _currentIndex);
     WidgetsBinding.instance.addObserver(this);
+
+    _presenceService.initialize();
     
     _loadInitialData();
     _loadTabOrder();
@@ -99,6 +119,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver, Si
     final currentUser = _auth.currentUser;
     if (currentUser != null) {
       MessageStatusService.instance.initialize(currentUser.uid);
+      _listenToMyBlockedUsers(); 
     }
 
     _listenForAllMessageChanges();
@@ -110,10 +131,34 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver, Si
     _initializeStarNotificationStream();
   }
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    if (state == AppLifecycleState.resumed) {
+      _presenceService.goOnline();
+    } else if (state == AppLifecycleState.paused || state == AppLifecycleState.inactive || state == AppLifecycleState.detached) {
+      _presenceService.goOffline();
+    }
+  }
+
+  void _listenToMyBlockedUsers() {
+    final currentUser = _auth.currentUser;
+    if (currentUser == null) return;
+    _myBlockedUsersSubscription?.cancel();
+    _myBlockedUsersSubscription = _firestore.collection('users').doc(currentUser.uid).snapshots().listen((snapshot) {
+      if (snapshot.exists && mounted) {
+        final userData = snapshot.data();
+        setState(() {
+          _myBlockedUsers = userData?['blockedUsers'] as List<dynamic>? ?? [];
+        });
+      }
+    });
+  }
+  
   Future<void> _loadInitialData() async {
     await _loadWallpaper();
     await _loadDataFromLocalDb();
-    await _syncAndLoadData();
+    _syncAndLoadData();
   }
   
   Future<void> _loadDataFromLocalDb() async {
@@ -138,18 +183,26 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver, Si
         final lastMessage = await _dbHelper.getLastMessage(chatRoomID);
         final lastMessageTimestamp = lastMessage?['timestamp'] as int? ?? 0;
         
+        final blockedUsersJson = map['blockedUsers'];
+        final blockedUsersList = (blockedUsersJson is String && blockedUsersJson.isNotEmpty) 
+            ? jsonDecode(blockedUsersJson) 
+            : [];
+        
+        final chatData = _ChatData(
+          userId: map['userId'],
+          displayName: displayNameToShow,
+          photoUrl: map['photoUrl'],
+          phoneNumber: phoneNumber,
+          lastMessageTimestamp: lastMessageTimestamp,
+          blockedUsers: blockedUsersList,
+        );
+
         if (lastMessageTimestamp > 0) {
-            chatsFromDb.add(_ChatData(userId: map['userId'], displayName: displayNameToShow, photoUrl: map['photoUrl'], phoneNumber: phoneNumber, lastMessageTimestamp: lastMessageTimestamp));
+            chatsFromDb.add(chatData);
         }
         
         if (phoneContactsMap.containsKey(normalizedPhoneNumber)) {
-          contactsFromDb.add(_ChatData(
-            userId: map['userId'],
-            displayName: displayNameToShow,
-            photoUrl: map['photoUrl'],
-            phoneNumber: phoneNumber,
-            lastMessageTimestamp: 0 
-          ));
+          contactsFromDb.add(chatData);
         }
       }
     }
@@ -220,6 +273,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver, Si
     _searchController.dispose();
     _userChangesSubscription?.cancel();
     _allMessagesSubscription?.cancel();
+    _myBlockedUsersSubscription?.cancel();
     _loveStarController.dispose();
     _chatsNotifier.dispose();
     _contactsNotifier.dispose();
@@ -260,7 +314,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver, Si
       for (var docChange in snapshot.docChanges) {
         if (docChange.type == DocumentChangeType.added || docChange.type == DocumentChangeType.modified) {
           final userData = docChange.doc.data();
-          if (userData != null) { userData['id'] = docChange.doc.id; await _dbHelper.saveJembeContact(userData); needsRefresh = true; }
+          if (userData != null) { 
+            final dataToSave = Map<String, dynamic>.from(userData);
+            dataToSave['id'] = docChange.doc.id; 
+            if (dataToSave['blockedUsers'] is List) {
+              dataToSave['blockedUsers'] = jsonEncode(dataToSave['blockedUsers']);
+            }
+            await _dbHelper.saveJembeContact(dataToSave); 
+            needsRefresh = true; 
+          }
         }
       }
       if (needsRefresh && mounted) { await _syncAndLoadData(); }
@@ -330,9 +392,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver, Si
     }
   }
   
-  // =========================================================================
-  // ----> IZI NI ZO FUNCTIONS ZARI ZABUZE, NONGEREYE KUZISUBIZAMO <----
-  // =========================================================================
   Future<void> _saveTabOrder(List<String> order) async { final prefs = await SharedPreferences.getInstance(); await prefs.setStringList('tabOrder', order); }
   
   Future<void> _loadTabOrder() async {
@@ -391,8 +450,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver, Si
     if (!_tabOrderLoaded) { return Scaffold(backgroundColor: theme.scaffoldBackgroundColor, body: const Center(child: CircularProgressIndicator())); }
     
     final allTabs = {
-      'chats': TabItem(id: 'chats', label: 'Chats', icon: Icons.chat_bubble_outline, screen: UsersListTab(searchQuery: _searchQuery, chatsNotifier: _chatsNotifier, onRefresh: _refreshData, onChatClosed: () => _syncAndLoadData())),
-      'contacts': TabItem(id: 'contacts', label: 'Contacts', icon: Icons.people_outline, screen: ContactsListTab(contactsNotifier: _contactsNotifier, onRefresh: _refreshData, onChatClosed: () => _syncAndLoadData())),
+      'chats': TabItem(id: 'chats', label: 'Chats', icon: Icons.chat_bubble_outline, screen: UsersListTab(searchQuery: _searchQuery, chatsNotifier: _chatsNotifier, onRefresh: _refreshData, onChatClosed: () => _syncAndLoadData(), myBlockedUsers: _myBlockedUsers)),
+      'contacts': TabItem(id: 'contacts', label: 'Contacts', icon: Icons.people_outline, screen: ContactsListTab(contactsNotifier: _contactsNotifier, onRefresh: _refreshData, onChatClosed: () => _syncAndLoadData(), myBlockedUsers: _myBlockedUsers)),
       'tv': TabItem(id: 'tv', label: 'TV', icon: Icons.tv_outlined, screen: const TVListTab()),
       'settings': TabItem(id: 'settings', label: 'Settings', icon: Icons.settings_outlined, screen: const SettingsScreen()),
     };
@@ -418,7 +477,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver, Si
     if (currentUser == null) return;
     try {
       final usersSnapshot = await _firestore.collection('users').get();
-      for (var userDoc in usersSnapshot.docs) { final userData = userDoc.data(); userData['id'] = userDoc.id; await _dbHelper.saveJembeContact(userData); }
+      for (var userDoc in usersSnapshot.docs) { 
+        final userData = userDoc.data(); 
+        final dataToSave = Map<String, dynamic>.from(userData);
+        dataToSave['id'] = userDoc.id; 
+        if (dataToSave['blockedUsers'] is List) {
+          dataToSave['blockedUsers'] = jsonEncode(dataToSave['blockedUsers']);
+        }
+        await _dbHelper.saveJembeContact(dataToSave); 
+      }
     } catch (e) { debugPrint("Ikosa ryo guhuza amakuru y'abakoresha: $e"); }
   }
 
@@ -502,7 +569,7 @@ class _TVListTabState extends State<TVListTab> {
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
             child: Text(
-              "URUTONDE RW'IBIRABO",
+              "URUTONDE GWAMA TV.",
               style: TextStyle(color: Colors.white.withOpacity(0.9), fontSize: 18, fontWeight: FontWeight.bold, letterSpacing: 1.5),
             ),
           ),
@@ -592,7 +659,8 @@ class UsersListTab extends StatelessWidget {
   final ValueNotifier<List<_ChatData>> chatsNotifier;
   final Future<void> Function() onRefresh;
   final VoidCallback onChatClosed;
-  const UsersListTab({super.key, required this.searchQuery, required this.chatsNotifier, required this.onRefresh, required this.onChatClosed});
+  final List<dynamic> myBlockedUsers;
+  const UsersListTab({super.key, required this.searchQuery, required this.chatsNotifier, required this.onRefresh, required this.onChatClosed, required this.myBlockedUsers});
 
   @override
   Widget build(BuildContext context) {
@@ -618,7 +686,12 @@ class UsersListTab extends StatelessWidget {
                           child: SlideAnimation(
                             verticalOffset: 50.0, 
                             child: FadeInAnimation(
-                              child: ChatListItem(key: ValueKey(chatData.userId), userData: {'displayName': chatData.displayName, 'photoUrl': chatData.photoUrl}, receiverID: chatData.userId, onClosed: onChatClosed)
+                              child: ChatListItem(
+                                key: ValueKey(chatData.userId), 
+                                chatData: chatData, 
+                                myBlockedUsers: myBlockedUsers, 
+                                onClosed: onChatClosed
+                              )
                             )
                           )
                         );
@@ -632,18 +705,22 @@ class UsersListTab extends StatelessWidget {
 }
 
 class ChatListItem extends StatelessWidget {
-  final Map<String, dynamic> userData;
-  final String receiverID;
+  final _ChatData chatData;
+  final List<dynamic> myBlockedUsers;
   final VoidCallback onClosed;
-  const ChatListItem({super.key, required this.userData, required this.receiverID, required this.onClosed});
+  const ChatListItem({super.key, required this.chatData, required this.myBlockedUsers, required this.onClosed});
   String _getChatRoomID(String uid1, String uid2) { List<String> ids = [uid1, uid2]; ids.sort(); return ids.join('_'); }
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final currentUser = FirebaseAuth.instance.currentUser;
     if (currentUser == null) return const SizedBox.shrink();
-    final chatRoomID = _getChatRoomID(currentUser.uid, receiverID);
-    final String? photoUrl = userData['photoUrl'];
+    final chatRoomID = _getChatRoomID(currentUser.uid, chatData.userId);
+    
+    final bool iBlockedThisUser = myBlockedUsers.contains(chatData.userId);
+    final bool thisUserBlockedMe = chatData.blockedUsers.contains(currentUser.uid);
+    final String? photoUrl = (iBlockedThisUser || thisUserBlockedMe) ? null : chatData.photoUrl;
+    
     final lastMessageStream = FirebaseFirestore.instance.collection('chat_rooms').doc(chatRoomID).collection('messages').orderBy('timestamp', descending: true).limit(1).snapshots();
     final unreadCountStream = FirebaseFirestore.instance.collection('chat_rooms').doc(chatRoomID).collection('messages').where('receiverID', isEqualTo: currentUser.uid).where('status', isNotEqualTo: 'seen').snapshots();
     return Padding(padding: const EdgeInsets.symmetric(horizontal: 10.0, vertical: 4.0),
@@ -651,7 +728,7 @@ class ChatListItem extends StatelessWidget {
             onClosed: (_) => onClosed(),
             transitionDuration: const Duration(milliseconds: 750), 
             closedColor: Colors.transparent, middleColor: theme.scaffoldBackgroundColor, openColor: theme.scaffoldBackgroundColor, closedShape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16.0)), closedElevation: 0, openElevation: 0,
-            openBuilder: (context, action) => ChatScreenWrapper(receiverEmail: userData['displayName'] ?? 'Ata zina', receiverID: receiverID),
+            openBuilder: (context, action) => ChatScreenWrapper(receiverEmail: chatData.displayName, receiverID: chatData.userId),
             closedBuilder: (context, openContainer) {
               return StreamBuilder<QuerySnapshot>(stream: unreadCountStream, builder: (context, unreadSnapshot) {
                 final unreadCount = unreadSnapshot.data?.docs.length ?? 0;
@@ -661,7 +738,7 @@ class ChatListItem extends StatelessWidget {
                   return ClipRRect(borderRadius: BorderRadius.circular(16.0), child: BackdropFilter(filter: ImageFilter.blur(sigmaX: 5.0, sigmaY: 5.0), child: Container(decoration: BoxDecoration(color: theme.colorScheme.surface.withAlpha(150), borderRadius: BorderRadius.circular(16.0), border: Border.all(color: theme.colorScheme.onSurface.withAlpha(51))), child: Row(children: [
                     Container(width: 8, color: hasUnread ? theme.colorScheme.secondary : Colors.transparent),
                     Expanded(child: ListTile(contentPadding: const EdgeInsets.symmetric(horizontal: 10.0, vertical: 8.0),
-                    leading: OpenContainer(transitionType: ContainerTransitionType.fade, transitionDuration: const Duration(milliseconds: 1000), closedColor: Colors.transparent, closedElevation: 0, openBuilder: (c, a) => ContactInfoScreen(userID: receiverID, userEmail: userData['displayName'] ?? 'Ata zina', photoUrl: photoUrl), closedBuilder: (c, a) => Hero(tag: 'profile-pic-$receiverID', child: CircleAvatar(radius: 28, backgroundImage: photoUrl != null ? NetworkImage(photoUrl) : null, child: photoUrl == null ? const Icon(Icons.person, size: 30) : null))), title: Text(userData['displayName'] ?? 'Ata zina', style: TextStyle(fontWeight: hasUnread ? FontWeight.bold : FontWeight.normal, color: theme.textTheme.bodyLarge?.color)), subtitle: LastMessagePreview(lastMessage: lastMessageData, currentUserID: currentUser.uid), trailing: TrailingInfo(lastMessage: lastMessageData, unreadCount: unreadCount))),
+                    leading: OpenContainer(transitionType: ContainerTransitionType.fade, transitionDuration: const Duration(milliseconds: 1000), closedColor: Colors.transparent, closedElevation: 0, openBuilder: (c, a) => ContactInfoScreen(userID: chatData.userId, userEmail: chatData.displayName, photoUrl: photoUrl), closedBuilder: (c, a) => Hero(tag: 'profile-pic-${chatData.userId}', child: CircleAvatar(radius: 28, backgroundImage: photoUrl != null ? NetworkImage(photoUrl) : null, child: photoUrl == null ? const Icon(Icons.person, size: 30) : null))), title: Text(chatData.displayName, style: TextStyle(fontWeight: hasUnread ? FontWeight.bold : FontWeight.normal, color: theme.textTheme.bodyLarge?.color)), subtitle: LastMessagePreview(lastMessage: lastMessageData, currentUserID: currentUser.uid), trailing: TrailingInfo(lastMessage: lastMessageData, unreadCount: unreadCount))),
                   ]))));
                 });
               });
@@ -728,7 +805,8 @@ class ContactsListTab extends StatelessWidget {
   final ValueNotifier<List<_ChatData>> contactsNotifier;
   final Future<void> Function() onRefresh;
   final VoidCallback onChatClosed;
-  const ContactsListTab({super.key, required this.contactsNotifier, required this.onRefresh, required this.onChatClosed});
+  final List<dynamic> myBlockedUsers;
+  const ContactsListTab({super.key, required this.contactsNotifier, required this.onRefresh, required this.onChatClosed, required this.myBlockedUsers});
 
   @override
   Widget build(BuildContext context) {
@@ -755,7 +833,11 @@ class ContactsListTab extends StatelessWidget {
                       child: SlideAnimation(
                         verticalOffset: 50.0, 
                         child: FadeInAnimation(
-                          child: _ContactListItem(userData: user, onClosed: onChatClosed)
+                          child: _ContactListItem(
+                            chatData: user,
+                            myBlockedUsers: myBlockedUsers,
+                            onClosed: onChatClosed,
+                          )
                         )
                       )
                     );
@@ -769,15 +851,24 @@ class ContactsListTab extends StatelessWidget {
 }
 
 class _ContactListItem extends StatelessWidget {
-  final _ChatData userData;
+  final _ChatData chatData;
+  final List<dynamic> myBlockedUsers;
   final VoidCallback onClosed;
-  const _ContactListItem({required this.userData, required this.onClosed});
+  const _ContactListItem({required this.chatData, required this.myBlockedUsers, required this.onClosed});
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final String? photoUrl = userData.photoUrl;
-    final String receiverID = userData.userId;
-    final String receiverName = userData.displayName;
+    final currentUser = FirebaseAuth.instance.currentUser;
+    if (currentUser == null) return const SizedBox.shrink();
+
+    final bool iBlockedThisUser = myBlockedUsers.contains(chatData.userId);
+    final bool thisUserBlockedMe = chatData.blockedUsers.contains(currentUser.uid);
+    final String? photoUrl = (iBlockedThisUser || thisUserBlockedMe) ? null : chatData.photoUrl;
+    
+    final String receiverID = chatData.userId;
+    final String receiverName = chatData.displayName;
+
     return Padding(padding: const EdgeInsets.symmetric(horizontal: 10.0, vertical: 4.0),
         child: OpenContainer(
             onClosed: (_) => onClosed(),
@@ -786,7 +877,7 @@ class _ContactListItem extends StatelessWidget {
             openBuilder: (context, action) => ChatScreenWrapper(receiverEmail: receiverName, receiverID: receiverID),
             closedBuilder: (context, openContainer) {
               return ClipRRect(borderRadius: BorderRadius.circular(16.0), child: BackdropFilter(filter: ImageFilter.blur(sigmaX: 5.0, sigmaY: 5.0), child: Container(decoration: BoxDecoration(color: theme.colorScheme.surface.withAlpha(150), borderRadius: BorderRadius.circular(16.0), border: Border.all(color: theme.colorScheme.onSurface.withAlpha(51))), child: ListTile(contentPadding: const EdgeInsets.symmetric(horizontal: 10.0, vertical: 8.0),
-              leading: OpenContainer(transitionType: ContainerTransitionType.fade, transitionDuration: const Duration(milliseconds: 1000), closedColor: Colors.transparent, closedElevation: 0, openBuilder: (c, a) => ContactInfoScreen(userID: receiverID, userEmail: receiverName, photoUrl: photoUrl), closedBuilder: (c, a) => Hero(tag: 'profile-pic-$receiverID', child: CircleAvatar(radius: 28, backgroundImage: photoUrl != null ? NetworkImage(photoUrl) : null, child: photoUrl == null ? const Icon(Icons.person, size: 30) : null))), title: Text(receiverName, style: TextStyle(color: theme.textTheme.bodyLarge?.color, fontWeight: FontWeight.w500)), subtitle: Text(userData.phoneNumber ?? '', style: TextStyle(color: theme.textTheme.bodyMedium?.color))))));
+              leading: OpenContainer(transitionType: ContainerTransitionType.fade, transitionDuration: const Duration(milliseconds: 1000), closedColor: Colors.transparent, closedElevation: 0, openBuilder: (c, a) => ContactInfoScreen(userID: receiverID, userEmail: receiverName, photoUrl: photoUrl), closedBuilder: (c, a) => Hero(tag: 'profile-pic-$receiverID', child: CircleAvatar(radius: 28, backgroundImage: photoUrl != null ? NetworkImage(photoUrl) : null, child: photoUrl == null ? const Icon(Icons.person, size: 30) : null))), title: Text(receiverName, style: TextStyle(color: theme.textTheme.bodyLarge?.color, fontWeight: FontWeight.w500)), subtitle: Text(chatData.phoneNumber ?? '', style: TextStyle(color: theme.textTheme.bodyMedium?.color))))));
             }));
   }
 }

@@ -529,6 +529,30 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "3.2.0"
+  firebase_database:
+    dependency: "direct main"
+    description:
+      name: firebase_database
+      sha256: "4d818703d815ee5b01c39182f664b8902d74a4653ed42d53a72351367f1fdc09"
+      url: "https://pub.dev"
+    source: hosted
+    version: "12.0.3"
+  firebase_database_platform_interface:
+    dependency: transitive
+    description:
+      name: firebase_database_platform_interface
+      sha256: "51b585f0830a1d3e11403ab063f30d0e01bd50bf525ccd18fd02604d3efcd95e"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.2.6+14"
+  firebase_database_web:
+    dependency: transitive
+    description:
+      name: firebase_database_web
+      sha256: "98908c7b094de58f49e6689d0c602e46d3571d6451a2f4711ee541bfa7870cde"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.2.6+20"
   firebase_messaging:
     dependency: "direct main"
     description:
@@ -767,10 +791,10 @@ packages:
     dependency: transitive
     description:
       name: flutter_volume_controller
-      sha256: "15f2c25bc4632ac5e8d42a208fe07c3224a4ee66b155d1ac86945b3db2bb58d9"
+      sha256: "22edb0993ad03ecbc8d1164daeb5b39d798d409625db692675a86889403b1532"
       url: "https://pub.dev"
     source: hosted
-    version: "1.3.3"
+    version: "1.3.4"
   flutter_web_plugins:
     dependency: transitive
     description: flutter
@@ -1849,10 +1873,10 @@ packages:
     dependency: transitive
     description:
       name: zego_plugin_adapter
-      sha256: "8b2aad4f8215a064db337a6444c0791f0e3a533a7171f4d573e6f528948b8900"
+      sha256: c574b0e71c9221a92a584f96f04437505b46f028c80abac2ab887c3bde64c0f6
       url: "https://pub.dev"
     source: hosted
-    version: "2.14.0"
+    version: "2.14.1"
   zego_uikit:
     dependency: "direct main"
     description:
@@ -1881,10 +1905,10 @@ packages:
     dependency: "direct overridden"
     description:
       name: zego_zim
-      sha256: ff7efe02519eb9dd9b606c0e531005a390da56c972b948e6a26f3874d7763cb4
+      sha256: "2861d32228ed05d0589a80e0d009fc03d6a1d4f71508e581715d079a129ae357"
       url: "https://pub.dev"
     source: hosted
-    version: "2.23.0"
+    version: "2.24.0"
   zego_zpns:
     dependency: transitive
     description:

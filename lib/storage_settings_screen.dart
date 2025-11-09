@@ -155,8 +155,8 @@ class _StorageSettingsScreenState extends State<StorageSettingsScreen> {
               _buildSettingsItem(
                 context,
                 icon: Icons.network_check_outlined,
-                title: "Ikoreshwa rya Enterineti",
-                subtitle: "Raba ingene Enterineti yawe ikoreshwa",
+                title: "Ikoreshwa rya Internet",
+                subtitle: "Raba ingene Internet yawe ikoreshwa",
                 onTap: () => _showFeatureNotReady(context),
               ),
               Divider(color: theme.dividerColor.withAlpha(80)),
@@ -164,7 +164,7 @@ class _StorageSettingsScreenState extends State<StorageSettingsScreen> {
               _buildSettingsItem(
                 context,
                 icon: Icons.data_usage_outlined,
-                title: "Iyo ukoresha enterineti ya terefone",
+                title: "Iyo ukoresha Internet ya terefone",
                 subtitle: _getSubtitle(_dataDownloads),
                 onTap: () => _showAutoDownloadDialog(context, "Kuri Enterineti ya Terefone", _dataDownloads),
               ),

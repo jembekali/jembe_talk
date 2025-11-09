@@ -3,6 +3,7 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:jembe_talk/home_screen.dart';
+import 'package:jembe_talk/services/presence_service.dart'; // <<< IMPINDUKA #1 >>>
 import 'package:jembe_talk/services/sync_service.dart';
 import 'package:jembe_talk/theme_manager.dart';
 import 'package:jembe_talk/welcome_screen.dart';
@@ -21,8 +22,6 @@ void main() async {
     options: DefaultFirebaseOptions.currentPlatform,
   );
 
-  // Ikigize App Check twagihagaritse vy'agateganyo
-
   syncService.start();
   final prefs = await SharedPreferences.getInstance();
   runApp(
@@ -33,8 +32,39 @@ void main() async {
   );
 }
 
-class MyApp extends StatelessWidget {
+// <<< IMPINDUKA #2: TWAHINDURIYEMO STATLESS IKABA STATEFUL WIDGET >>>
+class MyApp extends StatefulWidget {
   const MyApp({super.key});
+
+  @override
+  State<MyApp> createState() => _MyAppState();
+}
+
+class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
+  final PresenceService _presenceService = PresenceService();
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _presenceService.initialize();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    if (state == AppLifecycleState.resumed) {
+      _presenceService.goOnline();
+    } else if (state == AppLifecycleState.paused || state == AppLifecycleState.inactive || state == AppLifecycleState.detached) {
+      _presenceService.goOffline();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {

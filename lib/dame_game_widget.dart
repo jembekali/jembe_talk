@@ -1,4 +1,4 @@
-// Fayili: lib/dame_game_widget.dart (VERSION IVUGURUYE GUSA KU NYANDIKO)
+// lib/dame_game_widget.dart (YAKOSOWE BURUNDU KURI 10x10)
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -6,13 +6,11 @@ import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
 import 'dame_game_logic.dart';
 
-class DamePieceWidget extends StatefulWidget {
+class DamePieceWidget extends StatelessWidget {
   final DamePiece piece;
   final double squareSize;
   final bool isSelected;
   final bool mustPlay;
-  final int visualRow;
-  final int visualCol;
   final VoidCallback onTap;
 
   const DamePieceWidget({
@@ -21,45 +19,23 @@ class DamePieceWidget extends StatefulWidget {
     required this.squareSize,
     required this.isSelected,
     required this.mustPlay,
-    required this.visualRow,
-    required this.visualCol,
     required this.onTap,
   }) : super(key: key);
 
   @override
-  _DamePieceWidgetState createState() => _DamePieceWidgetState();
-}
-
-class _DamePieceWidgetState extends State<DamePieceWidget> {
-  late Tween<Offset> _tween;
-
-  @override
-  void initState() {
-    super.initState();
-    final initialOffset = Offset(widget.visualCol * widget.squareSize, widget.visualRow * widget.squareSize);
-    _tween = Tween<Offset>(begin: initialOffset, end: initialOffset);
-  }
-
-  @override
-  void didUpdateWidget(DamePieceWidget oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.visualRow != widget.visualRow || oldWidget.visualCol != widget.visualCol) {
-      final beginOffset = Offset(oldWidget.visualCol * oldWidget.squareSize, oldWidget.visualRow * oldWidget.squareSize);
-      final endOffset = Offset(widget.visualCol * widget.squareSize, widget.visualRow * widget.squareSize);
-      _tween = Tween<Offset>(begin: beginOffset, end: endOffset);
-    }
-  }
-
-  @override
   Widget build(BuildContext context) {
-    final bool isPlayer1 = widget.piece.player == 1;
+    final bool isPlayer1 = piece.player == 1;
 
-    final primusCap = BoxDecoration(
-      color: Colors.red.shade700,
+    final lightPiece = BoxDecoration(
       shape: BoxShape.circle,
       border: Border.all(
-        color: widget.mustPlay ? Colors.red.shade900 : (widget.isSelected ? Colors.yellowAccent : Colors.black54),
-        width: widget.isSelected || widget.mustPlay ? 3.5 : 2,
+        color: mustPlay ? Colors.red.shade900 : (isSelected ? Colors.yellowAccent : Colors.black54),
+        width: isSelected || mustPlay ? 3.5 : 2,
+      ),
+      gradient: RadialGradient(
+        colors: [const Color(0xFFF5DEB3), const Color(0xFFDEB887)], // Wheat -> BurlyWood
+        center: const Alignment(-0.3, -0.3),
+        radius: 0.8,
       ),
       boxShadow: [
         BoxShadow(
@@ -70,16 +46,16 @@ class _DamePieceWidgetState extends State<DamePieceWidget> {
       ]
     );
 
-    final metalCap = BoxDecoration(
-      color: Colors.grey.shade400,
+    final darkPiece = BoxDecoration(
       shape: BoxShape.circle,
-       border: Border.all(
-        color: widget.mustPlay ? Colors.red.shade900 : (widget.isSelected ? Colors.yellowAccent : Colors.black54),
-        width: widget.isSelected || widget.mustPlay ? 3.5 : 2,
+      border: Border.all(
+        color: mustPlay ? Colors.red.shade900 : (isSelected ? Colors.yellowAccent : Colors.black54),
+        width: isSelected || mustPlay ? 3.5 : 2,
       ),
-       gradient: RadialGradient(
-        colors: [Colors.grey.shade300, Colors.grey.shade500],
-        center: const Alignment(0.3, -0.3),
+       gradient: const RadialGradient(
+        colors: [Color(0xFF8B5A2B), Color(0xFF654321)], // Dark Tan -> Dark Brown
+        center: Alignment(-0.3, -0.3),
+        radius: 0.8,
       ),
       boxShadow: [
         BoxShadow(
@@ -90,49 +66,25 @@ class _DamePieceWidgetState extends State<DamePieceWidget> {
       ]
     );
 
-    return TweenAnimationBuilder<Offset>(
-      tween: _tween,
-      duration: const Duration(milliseconds: 2500),
-      curve: Curves.linear,
-      builder: (context, offset, child) {
-        return Transform.translate(
-          offset: offset,
-          child: child,
-        );
-      },
-      child: GestureDetector(
-        onTap: widget.onTap,
-        child: SizedBox(
-          width: widget.squareSize,
-          height: widget.squareSize,
-          child: Padding(
-            padding: const EdgeInsets.all(5.0),
-            child: Container(
-              decoration: isPlayer1 ? primusCap : metalCap,
-              child: Stack(
-                alignment: Alignment.center,
-                children: [
-                  if (isPlayer1)
-                    Text(
-                      'P',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                        fontSize: widget.squareSize * 0.5,
-                        shadows: const [
-                           Shadow(color: Colors.black, blurRadius: 2, offset: Offset(1,1)),
-                        ]
-                      ),
-                    ),
-                  
-                  if (widget.piece.type == DamePieceType.king)
-                    Icon(
-                      Icons.star,
-                      color: isPlayer1 ? Colors.white.withOpacity(0.9) : Colors.black.withOpacity(0.7),
-                      size: widget.squareSize * 0.6,
-                    ),
-                ],
-              ),
+    return GestureDetector(
+      onTap: onTap,
+      child: SizedBox(
+        width: squareSize,
+        height: squareSize,
+        child: Padding(
+          padding: const EdgeInsets.all(4.0),
+          child: Container(
+            decoration: isPlayer1 ? lightPiece : darkPiece,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                if (piece.type == DamePieceType.king)
+                  Icon(
+                    Icons.star,
+                    color: isPlayer1 ? Colors.black.withOpacity(0.6) : Colors.white.withOpacity(0.8),
+                    size: squareSize * 0.6,
+                  ),
+              ],
             ),
           ),
         ),
@@ -205,7 +157,7 @@ class _DameGameWidgetState extends State<DameGameWidget> {
       await _winPlayer.setAsset('assets/audio/win.mp3');
       await _losePlayer.setAsset('assets/audio/lose.mp3');
     } catch (e) {
-      debugPrint("Habaye ikosa mu gutangiza amajwi: $e");
+      debugPrint("Habaye ikosa mu gutanguza amajwi: $e");
     }
   }
 
@@ -243,7 +195,7 @@ class _DameGameWidgetState extends State<DameGameWidget> {
     if (!widget.isInvitation) {
       _isPlayer1 = widget.gameData['player1Id'] == _auth.currentUser!.uid;
     }
-    _gameLogic = DameGameLogic(myPlayerNumber: _isPlayer1 ? 1 : 2);
+    _gameLogic = DameGameLogic(myPlayerNumber: _isPlayer1 ? 1 : 2, boardSize: 10);
     
     final boardData = widget.gameData['boardState'] ?? widget.gameData['board']; 
     if(boardData != null) {
@@ -266,10 +218,10 @@ class _DameGameWidgetState extends State<DameGameWidget> {
         dialogTitle = "Umukino Wahagaritswe";
       } else {
         if (amIWinner) {
-          dialogTitle = "Waratsinze! 🎉";
+          dialogTitle = "Watsinze! 🎉";
           _playSound(_winPlayer);
         } else {
-          dialogTitle = "Waratsinzwe.";
+          dialogTitle = "Watsinzwe.";
           _playSound(_losePlayer);
         }
       }
@@ -306,17 +258,19 @@ class _DameGameWidgetState extends State<DameGameWidget> {
 
   void _handleTap(int tappedRow, int tappedCol) {
     if (!_isMyTurn) return;
-    int actualRow = _isPlayer1 ? tappedRow : 7 - tappedRow;
-    int actualCol = _isPlayer1 ? tappedCol : 7 - tappedCol;
+
+    int actualRow = _isPlayer1 ? tappedRow : 9 - tappedRow;
+    int actualCol = _isPlayer1 ? tappedCol : 9 - tappedCol;
 
     final move = _gameLogic.getMoveTo(actualRow, actualCol);
     
     if (move != null) {
       final wasCapture = move.jumpedRow != null;
       final piece = _gameLogic.board[move.fromRow][move.fromCol]!;
+
       final bool willBecomeKing = (piece.type == DamePieceType.man) && 
                                ((_gameLogic.myPlayerNumber == 1 && move.toRow == 0) || 
-                                (_gameLogic.myPlayerNumber == 2 && move.toRow == 7));
+                                (_gameLogic.myPlayerNumber == 2 && move.toRow == 9));
 
       bool turnEnded = _gameLogic.handleTap(actualRow, actualCol);
 
@@ -346,7 +300,8 @@ class _DameGameWidgetState extends State<DameGameWidget> {
     final newBoard = _gameLogic.board;
     final nextPlayerId = widget.gameData['turn'] == widget.gameData['player1Id'] ? widget.gameData['player2Id'] : widget.gameData['player1Id'];
     final int nextPlayerNumber = (nextPlayerId == widget.gameData['player1Id']) ? 1 : 2;
-    DameGameLogic tempLogic = DameGameLogic(myPlayerNumber: nextPlayerNumber);
+
+    DameGameLogic tempLogic = DameGameLogic(myPlayerNumber: nextPlayerNumber, boardSize: 10);
     final List<dynamic> boardAsListOfMaps = newBoard.map((row) => row.map((piece) => piece == null ? null : {'player': piece.player, 'type': piece.type.name}).toList()).toList();
     tempLogic.initializeBoard(boardAsListOfMaps);
     if (!tempLogic.hasAnyValidMoves(nextPlayerNumber)) {
@@ -361,7 +316,7 @@ class _DameGameWidgetState extends State<DameGameWidget> {
     final bool? confirm = await showDialog<bool>(
       context: context,
       builder: (BuildContext context) => AlertDialog(
-        title: const Text("Tanga Umukono?"),
+        title: const Text("Tanga Umukino?"),
         content: const Text("Wemeye gutsindwa? Ibi bizoha mugenzi wawe intsinzi."),
         actions: <Widget>[
           TextButton( child: const Text("Oya"), onPressed: () => Navigator.of(context).pop(false), ),
@@ -374,13 +329,13 @@ class _DameGameWidgetState extends State<DameGameWidget> {
       await _declareWinner(opponentId, "Yatsinze kuko uwo bakina yatanze umukono.");
     }
   }
-
+  
   Future<void> _resetGameForNewMatch() async {
-    final initialBoard = List.generate(8, (row) {
-      return List.generate(8, (col) {
+    final initialBoard = List.generate(10, (row) {
+      return List.generate(10, (col) {
         if ((row + col) % 2 != 0) {
-          if (row < 3) return {'player': 2, 'type': 'man'};
-          if (row > 4) return {'player': 1, 'type': 'man'};
+          if (row < 4) return {'player': 2, 'type': 'man'};
+          if (row > 5) return {'player': 1, 'type': 'man'};
         }
         return null;
       });
@@ -446,80 +401,82 @@ class _DameGameWidgetState extends State<DameGameWidget> {
     String opponentName = widget.opponentDisplayName ?? 'Uwo mukina';
     bool isGameActive = widget.gameData['status'] == 'active';
     
-    return AnimatedSize(
-      duration: const Duration(milliseconds: 500),
-      curve: Curves.easeInOut,
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        color: Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.5),
-        child: Column(children: [
-          if (widget.isInvitation)
-            _buildInvitationHeader()
-          else if (isGameActive)
-            _buildActiveGameHeader(currentTurnPlayerId, opponentName)
-          else
-            const SizedBox(height: 48),
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      color: Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.5),
+      child: Column(children: [
+        if (widget.isInvitation)
+          _buildInvitationHeader()
+        else if (isGameActive)
+          _buildActiveGameHeader(currentTurnPlayerId, opponentName)
+        else
+          const SizedBox(height: 48),
             
-          AspectRatio(
-            aspectRatio: 1.0,
-            child: Container(
-              margin: const EdgeInsets.all(8),
-              decoration: BoxDecoration(border: Border.all(color: Colors.black, width: 2)),
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  final squareSize = constraints.maxWidth / 8;
-                  return Stack(
-                    children: [
-                      for (int i = 0; i < 64; i++) ...[
-                        Positioned(
-                          top: (i ~/ 8) * squareSize,
-                          left: (i % 8) * squareSize,
-                          child: Container(
-                            width: squareSize,
-                            height: squareSize,
-                            color: ((i ~/ 8) + (i % 8)) % 2 == 0 ? const Color(0xFFE8E2D4) : const Color(0xFF6B8E23),
-                          ),
+        AspectRatio(
+          aspectRatio: 1.0,
+          child: Container(
+            margin: const EdgeInsets.all(8),
+            decoration: BoxDecoration(border: Border.all(color: Colors.black, width: 2)),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final squareSize = constraints.maxWidth / 10;
+                return Stack(
+                  children: [
+                    for (int i = 0; i < 100; i++) ...[
+                      Positioned(
+                        top: (i ~/ 10) * squareSize,
+                        left: (i % 10) * squareSize,
+                        child: Container(
+                          width: squareSize,
+                          height: squareSize,
+                          color: ((i ~/ 10) + (i % 10)) % 2 == 0 ? const Color(0xFFD2B48C) : const Color(0xFF8B4513),
                         ),
-                      ],
-                      ..._buildPossibleMoveIndicators(squareSize),
-                      ..._buildDamePieces(squareSize),
+                      ),
                     ],
-                  );
-                },
-              ),
+                    ..._buildPossibleMoveIndicators(squareSize),
+                    ..._buildDamePieces(squareSize),
+                  ],
+                );
+              },
             ),
           ),
-          
-          if (widget.isInvitation)
-            _buildInvitationButtons()
-          else if (isGameActive)
-            _buildActiveGameFooter(),
-        ]),
-      ),
+        ),
+        
+        if (widget.isInvitation)
+          _buildInvitationButtons()
+        else if (isGameActive)
+          _buildActiveGameFooter(),
+      ]),
     );
   }
   
   List<Widget> _buildDamePieces(double squareSize) {
     final List<Widget> pieces = [];
-    for (int r = 0; r < 8; r++) {
-      for (int c = 0; c < 8; c++) {
+    if (_gameLogic.board.length != 10) return pieces; 
+
+    for (int r = 0; r < 10; r++) {
+      for (int c = 0; c < 10; c++) {
         final piece = _gameLogic.board[r][c];
         if (piece != null) {
-          final visualRow = _isPlayer1 || widget.isInvitation ? r : 7 - r;
-          final visualCol = _isPlayer1 || widget.isInvitation ? c : 7 - c;
+          final visualRow = _isPlayer1 || widget.isInvitation ? r : 9 - r;
+          final visualCol = _isPlayer1 || widget.isInvitation ? c : 9 - c;
           bool isSelected = (_gameLogic.selectedRow == r && _gameLogic.selectedCol == c);
           bool mustPlay = _gameLogic.forcedCaptureMoves.any((m) => m.fromRow == r && m.fromCol == c) && !_gameLogic.isMultiJump;
           
           pieces.add(
-            DamePieceWidget(
-              key: ValueKey('piece_${piece.player}_${r}_$c'), 
-              piece: piece,
-              squareSize: squareSize,
-              isSelected: isSelected,
-              mustPlay: mustPlay,
-              visualRow: visualRow,
-              visualCol: visualCol,
-              onTap: () => _handleTap(visualRow, visualCol),
+            AnimatedPositioned(
+              duration: const Duration(milliseconds: 250),
+              curve: Curves.easeOut,
+              top: visualRow * squareSize,
+              left: visualCol * squareSize,
+              child: DamePieceWidget(
+                key: ValueKey('piece_${piece.player}_${r}_$c'), 
+                piece: piece,
+                squareSize: squareSize,
+                isSelected: isSelected,
+                mustPlay: mustPlay,
+                onTap: () => _handleTap(visualRow, visualCol),
+              ),
             ),
           );
         }
@@ -531,8 +488,8 @@ class _DameGameWidgetState extends State<DameGameWidget> {
   List<Widget> _buildPossibleMoveIndicators(double squareSize) {
     final List<Widget> indicators = [];
     for (final move in _gameLogic.possibleMoves) {
-      final visualRow = _isPlayer1 || widget.isInvitation ? move.toRow : 7 - move.toRow;
-      final visualCol = _isPlayer1 || widget.isInvitation ? move.toCol : 7 - move.toCol;
+      final visualRow = _isPlayer1 || widget.isInvitation ? move.toRow : 9 - move.toRow;
+      final visualCol = _isPlayer1 || widget.isInvitation ? move.toCol : 9 - move.toCol;
       indicators.add( Positioned( top: visualRow * squareSize, left: visualCol * squareSize, child: GestureDetector( onTap: () => _handleTap(visualRow, visualCol), child: SizedBox( width: squareSize, height: squareSize, child: Center( child: Container( width: squareSize * 0.4, height: squareSize * 0.4, decoration: BoxDecoration( color: Colors.green.withOpacity(0.5), shape: BoxShape.circle, ), ), ), ), ), ), );
     }
     return indicators;
@@ -578,14 +535,12 @@ class _DameGameWidgetState extends State<DameGameWidget> {
 
   Widget _buildInvitationHeader() {
     return SizedBox( height: 48, child: widget.isWaiting ? const Row( mainAxisAlignment: MainAxisAlignment.center, children: [ SizedBox(height: 16, width: 16, child: CircularProgressIndicator(strokeWidth: 2)), SizedBox(width: 8), Text("Ubutumire bwarungitswe. Rindira...", style: TextStyle(fontSize: 16, fontStyle: FontStyle.italic)), ], ) 
-    // HINDURA HANO #4: Umutwe w'ikibaho cyo gutumira
     : const Center( child: Text("Rungika Ubutumire bw'umukino", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)), ), );
   }
 
   Widget _buildInvitationButtons() {
     return Padding( padding: const EdgeInsets.only(top: 10, bottom: 10), child: Row( mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [ ElevatedButton.icon( onPressed: widget.onCancel, icon: const Icon(Icons.close), label: Text(widget.isWaiting ? "Hagarika Ubutumire" : "Hagarika"), style: ElevatedButton.styleFrom( backgroundColor: Colors.red.shade700, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)) ), ), 
     if (!widget.isWaiting) ElevatedButton.icon( onPressed: widget.onSendInvitation, icon: const Icon(Icons.send), 
-    // HINDURA HANO #4: Imbuto yo kohereza ubutumire
     label: const Text("Mubwire mukine"), style: ElevatedButton.styleFrom( backgroundColor: Colors.green.shade600, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)) ), ), ], ), );
   }
 }

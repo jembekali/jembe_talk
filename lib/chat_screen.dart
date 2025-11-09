@@ -1,5 +1,4 @@
-// lib/chat_screen.dart (VERSION FINAL, YUZUYE, KANDI UMUKINO WA DAME UKORA NEZA)
-
+// lib/chat_screen.dart (YAKOSOWE BURUNDU KURI PHOTO DOWNLOAD)
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -8,6 +7,7 @@ import 'dart:developer';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
@@ -76,7 +76,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
   Stream<DocumentSnapshot>? _currentUserStream;
   Stream<DocumentSnapshot>? _receiverUserStream;
-  Stream<DocumentSnapshot>? _gameStream;
+  StreamSubscription? _gameStreamSubscription;
+  Map<String, dynamic>? _currentGameData;
   Map<String, dynamic>? _optimisticGameData;
 
   bool _isPreparingInvitation = false;
@@ -88,42 +89,49 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   bool _isComposing = false;
   final Map<String, double> _uploadProgress = {};
   final FocusNode _focusNode = FocusNode();
-  bool _showEmojiPicker = false;
+  bool _isEmojiPickerVisible = false;
   List<dynamic> _chatItems = [];
 
-  bool _isTextFieldReadOnly = false;
-
   StreamSubscription? _uploadProgressSubscription;
+
+  // States for photo editing
+  final TextEditingController _captionController = TextEditingController();
+  Uint8List? _selectedImageData;
 
   VideoEditorController? _videoEditorController;
   File? _selectedVideoFile;
   bool _isProcessingVideo = false;
   double _videoProcessingProgress = 0.0;
   
-  String? _optimisticMessageId;
-  
   bool _isGameHardStopped = false;
 
   StreamSubscription? _uiUpdateSubscription;
+  
+  Stream<DatabaseEvent>? _presenceStream;
+  Stream<DatabaseEvent>? _activityStream;
+  DatabaseReference? _myActivityStatusRef;
+  Timer? _typingTimer;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
 
-    final chatRoomID = _getChatRoomID();
     _currentUserStream = _firestore.collection('users').doc(_auth.currentUser!.uid).snapshots();
     _receiverUserStream = _firestore.collection('users').doc(widget.receiverID).snapshots();
-    _gameStream = _firestore.collection('games').doc(chatRoomID).snapshots();
     
-    _loadInitialMessages();
-    _listenForFirebaseMessages();
+    _presenceStream = FirebaseDatabase.instance.ref('status/${widget.receiverID}').onValue.asBroadcastStream();
+    final chatRoomID = _getChatRoomID();
+    _myActivityStatusRef = FirebaseDatabase.instance.ref('activity/$chatRoomID/${_auth.currentUser!.uid}');
+    _activityStream = FirebaseDatabase.instance.ref('activity/$chatRoomID/${widget.receiverID}').onValue.asBroadcastStream();
+    
+    _loadInitialData();
 
     _uiUpdateSubscription = syncService.uiMessageUpdateStream.listen((updatedMessageId) {
       final index = _messages.indexWhere((msg) => msg['id'] == updatedMessageId);
       if (index != -1 && mounted) {
         log("UI update received from FCM for message: $updatedMessageId. Reloading messages.");
-        _loadInitialMessages();
+        _loadInitialMessages(forceReload: true);
       }
     });
     
@@ -142,10 +150,92 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     });
 
     _messageController.addListener(() {
-      if (mounted) setState(() => _isComposing = _messageController.text.trim().isNotEmpty);
+      if (mounted) {
+        setState(() => _isComposing = _messageController.text.trim().isNotEmpty);
+        _updateTypingStatus();
+      }
     });
     
     syncService.triggerSync();
+  }
+  
+  void _updateTypingStatus() {
+    _typingTimer?.cancel();
+    if (_messageController.text.trim().isNotEmpty) {
+      _myActivityStatusRef?.set("typing");
+      _typingTimer = Timer(const Duration(seconds: 2), () {
+        _myActivityStatusRef?.set("idle");
+      });
+    } else {
+      _myActivityStatusRef?.set("idle");
+    }
+  }
+
+  Future<void> _loadInitialData() async {
+    await _loadInitialMessages();
+    _listenForGameUpdates();
+    _listenForFirebaseMessages();
+  }
+
+  void _listenForGameUpdates() {
+    final chatRoomID = _getChatRoomID();
+    _gameStreamSubscription = _firestore.collection('games').doc(chatRoomID).snapshots().listen((gameSnapshot) {
+      if (!mounted) return;
+  
+      Map<String, dynamic>? newGameData;
+      bool opponentStoppedGame = false;
+  
+      if (gameSnapshot.exists && gameSnapshot.data() != null) {
+        final data = gameSnapshot.data()!;
+        newGameData = data;
+  
+        if (_currentGameData != null && _currentGameData!['status'] == 'active' && data['status'] == 'stopped') {
+           if (data['stoppedBy'] != _auth.currentUser!.uid) {
+             opponentStoppedGame = true;
+           }
+        }
+        
+        if (data['status'] == 'active' && _isPreparingInvitation) {
+          setState(() {
+            _isPreparingInvitation = false;
+            _isWaitingForGameAcceptance = false;
+          });
+        }
+
+      } else {
+        newGameData = null;
+      }
+  
+      setState(() {
+        _currentGameData = newGameData;
+      });
+  
+      if (opponentStoppedGame) {
+        _showOpponentStoppedGameDialog();
+      }
+    });
+  }
+
+  void _showOpponentStoppedGameDialog() {
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text("Umukino Wahagaritswe"),
+          content: const Text("Mugenzi wawe yahagaritse umukino."),
+          actions: <Widget>[
+            TextButton(
+              child: const Text("OK"),
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+            ),
+          ],
+        );
+      },
+    );
   }
 
   @override
@@ -180,16 +270,12 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   void _scrollToBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_scrollController.hasClients) {
-        _scrollController.animateTo(
-          _scrollController.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeOut,
-        );
+        _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
       }
     });
   }
 
-  Future<void> _loadInitialMessages() async {
+  Future<void> _loadInitialMessages({bool forceReload = false}) async {
     await _loadWallpapers();
     final chatRoomID = _getChatRoomID();
     final localMessages = await DatabaseHelper.instance.getMessagesForChatRoom(chatRoomID);
@@ -199,7 +285,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         _chatItems = _getChatItemsWithSeparators(_messages);
         _isLoading = false;
       });
+
       _scrollToBottom();
+      
       _updateReceivedMessagesStatusToSeen();
     }
   }
@@ -209,12 +297,18 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     WidgetsBinding.instance.removeObserver(this);
     _scrollController.dispose();
     _messageSubscription?.cancel();
+    _gameStreamSubscription?.cancel();
     _messageController.dispose();
+    _captionController.dispose();
     _focusNode.dispose();
     _videoEditorController?.dispose();
     if (mounted) context.read<AudioPlayerService>().stop();
     _uploadProgressSubscription?.cancel();
     _uiUpdateSubscription?.cancel();
+    
+    _typingTimer?.cancel();
+    _myActivityStatusRef?.set("idle");
+    
     super.dispose();
   }
 
@@ -268,38 +362,54 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     if (messageDay == yesterday) return "Ejo";
     return DateFormat.yMMMMd('fr_FR').format(date);
   }
-
-  void _listenForFirebaseMessages() {
+  
+  void _listenForFirebaseMessages() async {
     final chatRoomID = _getChatRoomID();
     final currentUser = _auth.currentUser;
     if (currentUser == null) return;
     _messageSubscription?.cancel();
-    _messageSubscription = _firestore
+
+    final prefs = await SharedPreferences.getInstance();
+    final clearTimestamp = prefs.getInt('clear_timestamp_$chatRoomID') ?? 0;
+
+    var query = _firestore
         .collection('chat_rooms')
         .doc(chatRoomID)
         .collection('messages')
-        .orderBy('timestamp')
-        .snapshots()
-        .listen((snapshot) async {
+        .orderBy('timestamp');
+
+    if (_messages.isNotEmpty) {
+      final lastLocalTimestamp = _messages.last['timestamp'];
+      final effectiveTimestamp = clearTimestamp > lastLocalTimestamp ? clearTimestamp : lastLocalTimestamp;
+      query = query.where('timestamp', isGreaterThan: effectiveTimestamp);
+    } else {
+      query = query.where('timestamp', isGreaterThan: clearTimestamp);
+    }
+
+    _messageSubscription = query.snapshots().listen((snapshot) async {
       if (!mounted) return;
+      if (snapshot.docChanges.isEmpty) return;
+
       List<DocumentReference> messagesToMarkAsSeen = [];
-      bool needsUIUpdate = false;
+      bool shouldReload = false;
+
       for (var change in snapshot.docChanges) {
-        needsUIUpdate = true;
         final doc = change.doc;
         final serverMessage = doc.data() as Map<String, dynamic>;
-        if (serverMessage['timestamp'] is! int) {
-          serverMessage['timestamp'] = (serverMessage['timestamp'] as Timestamp).millisecondsSinceEpoch;
+        
+        if (serverMessage['timestamp'] is Timestamp) {
+            serverMessage['timestamp'] = (serverMessage['timestamp'] as Timestamp).millisecondsSinceEpoch;
         }
-        if (change.type == DocumentChangeType.added || change.type == DocumentChangeType.modified) {
-          await DatabaseHelper.instance.saveMessage(serverMessage);
-        } else if (change.type == DocumentChangeType.removed) {
-          await DatabaseHelper.instance.deleteMessage(serverMessage['id']);
-        }
+
+        await DatabaseHelper.instance.saveMessage(serverMessage);
+
+        shouldReload = true;
+
         if (serverMessage['receiverID'] == currentUser.uid && serverMessage['status'] != 'seen') {
           messagesToMarkAsSeen.add(doc.reference);
         }
       }
+
       if (messagesToMarkAsSeen.isNotEmpty) {
         WriteBatch batch = _firestore.batch();
         for (var ref in messagesToMarkAsSeen) {
@@ -309,20 +419,25 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           debugPrint("Error batch updating status to seen: $e");
         });
       }
-      if (needsUIUpdate && mounted) {
-        final localMessages = await DatabaseHelper.instance.getMessagesForChatRoom(chatRoomID);
-        setState(() {
-          _messages = List.from(localMessages);
-          _chatItems = _getChatItemsWithSeparators(_messages);
-        });
-        if (snapshot.docChanges.any((c) => c.type == DocumentChangeType.added)) {
-          _scrollToBottom();
-        }
+      
+      if(shouldReload) {
+        _loadInitialMessages(forceReload: true);
       }
     });
   }
 
+  void _addOptimisticMessage(Map<String, dynamic> messageData) {
+    setState(() {
+      _messages.add(messageData);
+      _chatItems = _getChatItemsWithSeparators(_messages);
+    });
+    _scrollToBottom();
+  }
+
   void _sendMessage({String? text, String messageType = 'text'}) async {
+    _typingTimer?.cancel();
+    _myActivityStatusRef?.set("idle");
+    
     if (messageType == 'text') {
       if (_messageController.text.trim().isEmpty) return;
       text = _messageController.text.trim();
@@ -347,9 +462,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       DatabaseHelper.columnMessage: text,
     };
     await DatabaseHelper.instance.saveMessage(messageData);
+    _addOptimisticMessage(messageData);
     syncService.triggerSync();
-    _loadInitialMessages();
-    _scrollToBottom();
   }
 
   void _handleDeclineInvitation() {
@@ -386,33 +500,51 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   }
 
   Future<void> _pickAndPreviewImage(ImageSource source) async {
+    _focusNode.unfocus();
     final image = await ImagePicker().pickImage(source: source);
     if (image == null) return;
+
     final imageBytes = await File(image.path).readAsBytes();
     if (!mounted) return;
-    final editedImageBytes = await Navigator.push<Uint8List?>(context, MaterialPageRoute(builder: (context) => ImageEditor(image: imageBytes,)),);
-    if (editedImageBytes == null) return;
+
+    setState(() {
+      _selectedImageData = imageBytes;
+    });
+  }
+
+  Future<void> _sendPhoto() async {
+    if (_selectedImageData == null) return;
+    
     final tempDir = await getTemporaryDirectory();
     final tempFilePath = path.join(tempDir.path, '${const Uuid().v4()}.png');
     final tempFile = File(tempFilePath);
-    await tempFile.writeAsBytes(editedImageBytes);
-    if (!mounted) return;
-    final result = await Navigator.push<Map<String, String>>(context, MaterialPageRoute(builder: (context) => ImagePreviewScreen(imagePath: tempFile.path),),);
-    if (result != null) {
-      final pathFromPreview = result['path'];
-      final caption = result['caption'];
-      if (pathFromPreview != null) {
-        final permanentPath = await mediaUploadService.saveFilePermanently(pathFromPreview);
-        await mediaUploadService.sendMediaMessage(
-          chatRoomID: _getChatRoomID(),
-          receiverID: widget.receiverID,
-          localPath: permanentPath,
-          messageType: 'image',
-          text: caption,
-          fileName: path.basename(permanentPath),
-        );
-      }
+    await tempFile.writeAsBytes(_selectedImageData!);
+
+    final permanentPath = await mediaUploadService.saveFilePermanently(tempFile.path);
+    
+    await mediaUploadService.sendMediaMessage(
+      chatRoomID: _getChatRoomID(),
+      receiverID: widget.receiverID,
+      localPath: permanentPath,
+      messageType: 'image',
+      text: _captionController.text.trim(),
+      fileName: path.basename(permanentPath),
+    );
+
+    if (mounted) {
+      setState(() {
+        _selectedImageData = null;
+        _captionController.clear();
+      });
+      _loadInitialMessages(forceReload: true);
     }
+  }
+
+  void _cancelPhotoSelection() {
+    setState(() {
+      _selectedImageData = null;
+      _captionController.clear();
+    });
   }
 
   Future<void> _processAndAddOptimisticVideo() async {
@@ -452,7 +584,18 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       }
       final permanentPath = await mediaUploadService.saveFilePermanently(videoPathToSave);
       final thumbnailPath = await thumbnailFuture;
-      _addOptimisticVideoMessage(permanentPath, thumbnailPath);
+
+      await mediaUploadService.sendMediaMessage(
+        chatRoomID: _getChatRoomID(),
+        receiverID: widget.receiverID,
+        localPath: permanentPath,
+        messageType: 'video',
+        thumbnailLocalPath: thumbnailPath,
+        fileName: path.basename(permanentPath),
+      );
+      
+      _loadInitialMessages(forceReload: true);
+      
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Ikosa: $e')));
     } finally {
@@ -466,55 +609,21 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     }
   }
 
-  void _addOptimisticVideoMessage(String localPath, String? thumbnailLocalPath) {
-    final messageId = "optimistic_${const Uuid().v4()}";
-    final optimisticMessage = {
-      DatabaseHelper.columnId: messageId,
-      DatabaseHelper.columnChatRoomID: _getChatRoomID(),
-      DatabaseHelper.columnSenderID: _auth.currentUser!.uid,
-      DatabaseHelper.columnReceiverID: widget.receiverID,
-      DatabaseHelper.columnMessageType: 'video',
-      DatabaseHelper.columnMessage: '',
-      DatabaseHelper.columnTimestamp: DateTime.now().millisecondsSinceEpoch,
-      DatabaseHelper.columnStatus: 'optimistic',
-      DatabaseHelper.columnLocalPath: localPath,
-      DatabaseHelper.columnFileName: thumbnailLocalPath,
-    };
-    setState(() {
-      _messages.add(optimisticMessage);
-      _chatItems = _getChatItemsWithSeparators(_messages);
-      _optimisticMessageId = messageId;
+  Map<String, dynamic> _getInitialBoardForFirestore() {
+    final initialBoard = List.generate(10, (row) {
+      return List.generate(10, (col) {
+        if ((row + col) % 2 != 0) {
+          if (row < 4) return {'player': 2, 'type': 'man'};
+          if (row > 5) return {'player': 1, 'type': 'man'};
+        }
+        return null;
+      });
     });
-    _scrollToBottom();
-  }
-
-  void _sendOptimisticVideo() {
-    if (_optimisticMessageId == null) return;
-    final optimisticMessageIndex = _messages.indexWhere((m) => m['id'] == _optimisticMessageId);
-    if (optimisticMessageIndex == -1) return;
-    final optimisticData = _messages[optimisticMessageIndex];
-    mediaUploadService.sendMediaMessage(
-      chatRoomID: optimisticData[DatabaseHelper.columnChatRoomID],
-      receiverID: optimisticData[DatabaseHelper.columnReceiverID],
-      localPath: optimisticData[DatabaseHelper.columnLocalPath],
-      messageType: 'video',
-      thumbnailLocalPath: optimisticData[DatabaseHelper.columnFileName],
-      fileName: path.basename(optimisticData[DatabaseHelper.columnLocalPath]),
-    );
-    setState(() {
-      _messages.removeAt(optimisticMessageIndex);
-      _chatItems = _getChatItemsWithSeparators(_messages);
-      _optimisticMessageId = null;
-    });
-  }
-
-  void _cancelOptimisticVideo() {
-    if (_optimisticMessageId == null) return;
-    setState(() {
-      _messages.removeWhere((m) => m['id'] == _optimisticMessageId);
-      _chatItems = _getChatItemsWithSeparators(_messages);
-      _optimisticMessageId = null;
-    });
+    final Map<String, dynamic> boardForFirestore = {};
+    for (int i = 0; i < initialBoard.length; i++) {
+      boardForFirestore[i.toString()] = initialBoard[i];
+    }
+    return boardForFirestore;
   }
 
   Future<void> _createGameInFirestore(Map<String, dynamic> invitationMessage) async {
@@ -528,22 +637,17 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       );
       return;
     }
-    final invitationSenderId = invitationMessage['senderID'];
+
     final chatRoomID = _getChatRoomID();
-    final currentUser = _auth.currentUser!;
-    final initialBoard = List.generate(8, (row) {
-      return List.generate(8, (col) {
-        if ((row + col) % 2 != 0) {
-          if (row < 3) return {'player': 2, 'type': 'man'};
-          if (row > 4) return {'player': 1, 'type': 'man'};
-        }
-        return null;
-      });
-    });
-    final Map<String, dynamic> boardForFirestore = {};
-    for (int i = 0; i < initialBoard.length; i++) {
-      boardForFirestore[i.toString()] = initialBoard[i];
+    
+    final messageIdToDelete = invitationMessage['id'];
+    if (messageIdToDelete != null) {
+      _firestore.collection('chat_rooms').doc(chatRoomID).collection('messages').doc(messageIdToDelete).delete();
     }
+    
+    final invitationSenderId = invitationMessage['senderID'];
+    final currentUser = _auth.currentUser!;
+    
     final player1Id = invitationSenderId;
     final player2Id = currentUser.uid;
     final player1Doc = await _firestore.collection('users').doc(player1Id).get();
@@ -552,9 +656,16 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     final player2Email = player2Doc.data()?['displayName'] ?? 'Player 2';
     
     final gameData = {
-      'boardState': boardForFirestore, 'player1Id': player1Id, 'player2Id': player2Id, 'player1Email': player1Email,
-      'player2Email': player2Email, 'turn': player1Id, 'status': 'active',
-      'winnerId': null, 'endReason': null,
+      'boardState': _getInitialBoardForFirestore(),
+      'player1Id': player1Id,
+      'player2Id': player2Id,
+      'player1Email': player1Email,
+      'player2Email': player2Email,
+      'turn': player1Id,
+      'status': 'active',
+      'winnerId': null,
+      'endReason': null,
+      'stoppedBy': null,
     };
     
     setState(() {
@@ -575,7 +686,26 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     });
   }
 
-  void _handleMenuSelection(String value) {
+  Future<void> _toggleBlockUser(bool isCurrentlyBlocked) async {
+    final currentUserRef = _firestore.collection('users').doc(_auth.currentUser!.uid);
+    try {
+      if (isCurrentlyBlocked) {
+        await currentUserRef.update({
+          'blockedUsers': FieldValue.arrayRemove([widget.receiverID])
+        });
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Uyu muntu yafunguwe.")));
+      } else {
+        await currentUserRef.update({
+          'blockedUsers': FieldValue.arrayUnion([widget.receiverID])
+        });
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Uyu muntu yafunzwe.")));
+      }
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Habaye ikosa: $e")));
+    }
+  }
+
+  void _handleMenuSelection(String value, {bool isReceiverBlocked = false}) {
     switch (value) {
       case 'view_contact':
         _navigateToContactInfo();
@@ -587,56 +717,76 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         _clearChat();
         break;
       case 'block':
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Block/Unblock ntiriko irakora muriki gihe co gusuzuma.")));
+        _toggleBlockUser(isReceiverBlocked);
         break;
     }
   }
-
+  
   Future<void> _clearChat() async {
-    final chatRoomID = _getChatRoomID();
-    await DatabaseHelper.instance.clearChat(chatRoomID);
-    setState(() {
-      _messages.clear();
-      _chatItems.clear();
-    });
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text("Futa ibiganiro"),
+        content: const Text("Wemeye ko ibiganiro byose biri hano bisibwa burundu?"),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text("Oya"),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text("Ego, Futa"),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      final chatRoomID = _getChatRoomID();
+      
+      final lastMessageTimestamp = _messages.isNotEmpty ? _messages.last['timestamp'] as int : DateTime.now().millisecondsSinceEpoch;
+
+      await DatabaseHelper.instance.clearChat(chatRoomID);
+      
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt('clear_timestamp_$chatRoomID', lastMessageTimestamp);
+
+      if (mounted) {
+        setState(() {
+          _messages.clear();
+          _chatItems.clear();
+        });
+        _listenForFirebaseMessages();
+      }
+    }
   }
 
   void _toggleEmojiPicker() async {
-    if (_showEmojiPicker) {
+    if (_isGameVisible()) return;
+  
+    if (_isEmojiPickerVisible) {
       Navigator.of(context).pop();
     } else {
-      if (!_isTextFieldReadOnly) {
-        SystemChannels.textInput.invokeMethod('TextInput.hide');
-        setState(() => _isTextFieldReadOnly = true);
-        await Future.delayed(const Duration(milliseconds: 100));
-      }
-      if (mounted) _showAnimatedEmojiPicker();
+      SystemChannels.textInput.invokeMethod('TextInput.hide');
+      await Future.delayed(const Duration(milliseconds: 100));
+      if(mounted) _showAnimatedEmojiPicker();
     }
   }
 
   void _onEmojiSelected(EmojiData emoji) {
     if (_messageController.text.trim().isEmpty) {
       _sendMessage(text: emoji.char, messageType: 'large_emoji');
-      if (_showEmojiPicker) Navigator.of(context).pop();
+      if (_isEmojiPickerVisible) Navigator.of(context).pop();
     } else {
-      setState(() {
-        _messageController.text += emoji.char;
-        _messageController.selection = TextSelection.fromPosition(TextPosition(offset: _messageController.text.length));
-      });
-      Navigator.of(context).pop();
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
-          setState(() {
-            _isTextFieldReadOnly = false;
-          });
-          _focusNode.requestFocus();
-        }
-      });
+      _messageController.text += emoji.char;
+      _messageController.selection = TextSelection.fromPosition(
+        TextPosition(offset: _messageController.text.length),
+      );
     }
   }
 
   void _showAnimatedEmojiPicker() async {
-    if (mounted) setState(() => _showEmojiPicker = true);
+    setState(() => _isEmojiPickerVisible = true);
     await showGeneralDialog(
       context: context, barrierDismissible: true, barrierLabel: 'Emoji Picker', transitionDuration: const Duration(milliseconds: 700),
       pageBuilder: (context, animation, secondaryAnimation) {
@@ -647,7 +797,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         return SlideTransition(position: tween.animate(CurvedAnimation(parent: animation, curve: Curves.easeInOutCubic)), child: FadeTransition(opacity: animation, child: child),);
       },
     );
-    if (mounted) setState(() => _showEmojiPicker = false);
+    if (mounted) {
+       setState(() => _isEmojiPickerVisible = false);
+    }
   }
 
   void _navigateBackToHome() {
@@ -663,6 +815,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   }
 
   Future<void> _pickVideo() async {
+    _focusNode.unfocus();
     final XFile? videoFile = await ImagePicker().pickVideo(source: ImageSource.gallery);
     if (videoFile == null || !mounted) return;
     _videoEditorController?.dispose();
@@ -677,6 +830,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   }
 
   Future<void> _pickDocument() async {
+    _focusNode.unfocus();
     final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
       allowedExtensions: ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'txt'],
@@ -691,10 +845,12 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         messageType: 'document',
         fileName: file.name,
       );
+      _loadInitialMessages(forceReload: true);
     }
   }
 
   Future<void> _pickAudio() async {
+    _focusNode.unfocus();
     final result = await FilePicker.platform.pickFiles(type: FileType.audio);
     if (result != null && result.files.single.path != null) {
       final file = result.files.single;
@@ -706,15 +862,18 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         messageType: 'audio_file',
         fileName: file.name,
       );
+      _loadInitialMessages(forceReload: true);
     }
   }
 
   Future<void> _pickContact() async {
+    _focusNode.unfocus();
     await mediaUploadService.sendContact(
       context,
       chatRoomID: _getChatRoomID(),
       receiverID: widget.receiverID,
     );
+    _loadInitialMessages(forceReload: true);
   }
 
   void _cancelVideoSelection() {
@@ -778,17 +937,46 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       },
     );
   }
+
+  bool _isGameVisible() {
+    bool isLiveGameActive = _currentGameData != null && (_currentGameData!['status'] == 'active' || _currentGameData!['status'] == 'finished');
+    bool isOptimisticGame = _optimisticGameData != null;
+    return _isPreparingInvitation || isLiveGameActive || isOptimisticGame;
+  }
   
+  String _formatLastSeen(int timestamp) {
+    final lastSeen = DateTime.fromMillisecondsSinceEpoch(timestamp);
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final yesterday = DateTime(now.year, now.month, now.day - 1);
+    final lastSeenDay = DateTime(lastSeen.year, lastSeen.month, lastSeen.day);
+
+    if (lastSeenDay == today) {
+      return "Aheruka kumurongo saa ${DateFormat.Hm().format(lastSeen)}";
+    } else if (lastSeenDay == yesterday) {
+      return "Aheruka kumurongo ejo saa ${DateFormat.Hm().format(lastSeen)}";
+    } else {
+      return "Aheruka kumurongo kuwa ${DateFormat.yMd().format(lastSeen)}";
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final activeWallpaperPath = _chatBackgroundImagePath ?? _globalBackgroundImagePath;
+    final isGameVisible = _isGameVisible();
+
+    if (isGameVisible && _focusNode.hasFocus) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+         _focusNode.unfocus();
+      });
+    }
+
     return PopScope(
       canPop: false,
       onPopInvoked: (didPop) {
         if(didPop) return;
-        if (_optimisticMessageId != null) {
-          _cancelOptimisticVideo();
+        if (_selectedImageData != null) {
+          _cancelPhotoSelection();
         } else if (_selectedVideoFile != null) {
           _cancelVideoSelection();
         } else if (_isPreparingInvitation) {
@@ -809,45 +997,21 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         resizeToAvoidBottomInset: true,
         extendBodyBehindAppBar: true,
         appBar: _isSelectionMode ? _buildSelectionAppBar() : _buildDefaultAppBar(),
-        body: StreamBuilder<DocumentSnapshot>(
-          stream: _gameStream,
-          builder: (context, gameSnapshot) {
-            
-            if (gameSnapshot.hasData && gameSnapshot.data!.exists) {
-              if (_isWaitingForGameAcceptance) {
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  if (mounted) {
-                    setState(() {
-                      _isWaitingForGameAcceptance = false;
-                      _isPreparingInvitation = false;
-                    });
-                  }
-                });
-              }
-            }
-
-            bool isGameAvailable = gameSnapshot.hasData && gameSnapshot.data!.exists;
-            bool isGameActive = isGameAvailable && (gameSnapshot.data!.data() as Map<String, dynamic>)['status'] == 'active';
-            return Stack(
-              children: [
-                if (activeWallpaperPath != null && File(activeWallpaperPath).existsSync())
-                  Image.file(File(activeWallpaperPath), height: double.infinity, width: double.infinity, fit: BoxFit.cover, color: Colors.black.withAlpha(128), colorBlendMode: BlendMode.darken)
-                else
-                  Container(color: theme.scaffoldBackgroundColor),
-                SafeArea(
-                  child: Column(
-                    children: [
-                      _buildLiveGameArea(gameSnapshot),
-                      Expanded(
-                        child: _buildMessagesContainer(),
-                      ),
-                      _buildMessageComposerContainer(isGameActive: isGameActive),
-                    ],
+        body: Stack(
+          children: [
+            Container(color: theme.scaffoldBackgroundColor),
+            SafeArea(
+              child: Column(
+                children: [
+                  _buildLiveGameArea(),
+                  Expanded(
+                    child: _buildMessagesContainer(),
                   ),
-                ),
-              ],
-            );
-          },
+                  _buildMessageComposerContainer(isGameVisible: isGameVisible),
+                ],
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -855,16 +1019,35 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
   Widget _buildMessagesContainer() {
     final theme = Theme.of(context);
+    
+    ImageProvider? backgroundImage;
+    BoxFit fit = BoxFit.cover;
+    ImageRepeat repeat = ImageRepeat.noRepeat;
+    ColorFilter? colorFilter = ColorFilter.mode(Colors.black.withAlpha(128), BlendMode.darken);
+
+    if (_chatBackgroundImagePath != null && File(_chatBackgroundImagePath!).existsSync()) {
+      backgroundImage = FileImage(File(_chatBackgroundImagePath!));
+    } else if (_globalBackgroundImagePath != null && File(_globalBackgroundImagePath!).existsSync()) {
+      backgroundImage = FileImage(File(_globalBackgroundImagePath!));
+    } else {
+      backgroundImage = const AssetImage('assets/images/star_pattern_dark.png');
+      fit = BoxFit.none;
+      repeat = ImageRepeat.repeat;
+      colorFilter = ColorFilter.mode(Colors.white.withAlpha(26), BlendMode.srcATop);
+    }
+    
     return Container(
+      key: const ValueKey('messages_container'),
       margin: const EdgeInsets.fromLTRB(8, 0, 8, 0),
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         color: theme.colorScheme.surface.withAlpha(200),
         borderRadius: BorderRadius.circular(24.0),
         image: DecorationImage(
-          image: const AssetImage('assets/images/star_pattern_dark.png'),
-          repeat: ImageRepeat.repeat,
-          colorFilter: ColorFilter.mode(Colors.white.withAlpha(26), BlendMode.srcATop),
+          image: backgroundImage,
+          fit: fit,
+          repeat: repeat,
+          colorFilter: colorFilter,
         ),
       ),
       child: _isLoading
@@ -883,7 +1066,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             final messageData = item as Map<String, dynamic>;
             final messageId = messageData['id'] ?? 'temp_${messageData['timestamp']}';
             final progress = _uploadProgress[messageId];
-            final isOptimistic = messageData['status'] == 'optimistic';
             return MessageBubble(
               key: ValueKey(messageId),
               messageData: messageData,
@@ -892,154 +1074,275 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
               uploadProgress: progress,
               onAcceptInvitation: () => _createGameInFirestore(messageData),
               onDeclineInvitation: _handleDeclineInvitation,
-              isOptimistic: isOptimistic,
-              onSendOptimistic: _sendOptimisticVideo,
-              onCancelOptimistic: _cancelOptimisticVideo,
             );
           }
         },
       ),
     );
   }
-
-  Widget _buildMessageComposerContainer({required bool isGameActive}) {
+  
+  Widget _buildMessageComposerContainer({required bool isGameVisible}) {
     return StreamBuilder<DocumentSnapshot>(
       stream: _currentUserStream,
-      builder: (context, snapshot) {
-        final userData = snapshot.data?.data() as Map<String, dynamic>?;
-        final blockedUsers = userData?['blockedUsers'] as List<dynamic>? ?? [];
-        final isReceiverBlocked = blockedUsers.contains(widget.receiverID);
-        if (isReceiverBlocked) {
-          return Container(
-            padding: const EdgeInsets.all(16.0),
-            margin: const EdgeInsets.all(8.0),
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.surface.withAlpha(220),
-              borderRadius: BorderRadius.circular(12.0),
-            ),
-            child: const Text(
-              "Ntushobora kwandikira uyu muntu kuko wamufunze. Mufungure kugira ngo mwongere muganire.",
-              textAlign: TextAlign.center,
-            ),
-          );
-        } else {
-          return _buildMessageComposer(isGameActive: isGameActive);
-        }
+      builder: (context, currentUserSnapshot) {
+        return StreamBuilder<DocumentSnapshot>(
+          stream: _receiverUserStream,
+          builder: (context, receiverSnapshot) {
+            if (!currentUserSnapshot.hasData || !receiverSnapshot.hasData) {
+              return _buildMessageComposer(isGameVisible: isGameVisible, hintText: "Message...", isReadOnly: true);
+            }
+
+            final currentUserData = currentUserSnapshot.data?.data() as Map<String, dynamic>?;
+            final myBlockedUsers = currentUserData?['blockedUsers'] as List<dynamic>? ?? [];
+            final iHaveBlockedReceiver = myBlockedUsers.contains(widget.receiverID);
+
+            final receiverData = receiverSnapshot.data?.data() as Map<String, dynamic>?;
+            final receiverBlockedUsers = receiverData?['blockedUsers'] as List<dynamic>? ?? [];
+            final amIBlockedByReceiver = receiverBlockedUsers.contains(_auth.currentUser!.uid);
+
+            if (amIBlockedByReceiver) {
+              return Container(
+                padding: const EdgeInsets.all(16.0),
+                margin: const EdgeInsets.all(8.0),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.surface.withAlpha(220),
+                  borderRadius: BorderRadius.circular(12.0),
+                ),
+                child: const Text(
+                  "Ntushobora kwandikira uyu muntu kuko yagufunze.",
+                  textAlign: TextAlign.center,
+                ),
+              );
+            }
+            
+            if (iHaveBlockedReceiver) {
+              return Container(
+                padding: const EdgeInsets.all(16.0),
+                margin: const EdgeInsets.all(8.0),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.surface.withAlpha(220),
+                  borderRadius: BorderRadius.circular(12.0),
+                ),
+                child: const Text(
+                  "Ntushobora kwandikira uyu muntu kuko wamufunze. Mufungure kugira ngo mwongere muganire.",
+                  textAlign: TextAlign.center,
+                ),
+              );
+            }
+            
+            return _buildMessageComposer(isGameVisible: isGameVisible);
+          },
+        );
       },
     );
   }
 
-  Widget _buildMessageComposer({required bool isGameActive}) {
+  Widget _buildMessageComposer({required bool isGameVisible, String? hintText, bool? isReadOnly}) {
+    if (_selectedImageData != null) {
+      return _buildPhotoPreviewComposer();
+    }
     if (_selectedVideoFile != null) {
       return _buildVideoEditorComposer();
     }
-    final theme = Theme.of(context);
-    bool isReadOnly = isGameActive || _isTextFieldReadOnly;
-    String hintText = "Message...";
-    if (isGameActive) {
-      hintText = "Koresha ijwi mu mukino...";
-    } else if (_optimisticMessageId != null) {
-      final optimisticMessageExists = _messages.any((m) => m['id'] == _optimisticMessageId);
-      if (optimisticMessageExists) {
-        isReadOnly = true;
-      }
-    }
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 12.0),
-      color: theme.scaffoldBackgroundColor,
-      child: Stack(
-        alignment: Alignment.bottomRight,
-        children: [
-          Material(
-            elevation: 4,
-            borderRadius: BorderRadius.circular(30),
-            shadowColor: Colors.black.withAlpha(77),
-            child: Container(
-              constraints: const BoxConstraints(minHeight: 52),
-              decoration: BoxDecoration(color: theme.cardColor, borderRadius: BorderRadius.circular(30),),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.only(left: 8.0),
-                    child: IconButton(
-                      icon: Icon(_showEmojiPicker ? Icons.keyboard : Icons.emoji_emotions_outlined, color: theme.iconTheme.color?.withAlpha(179)),
-                      onPressed: isReadOnly ? null : _toggleEmojiPicker,
-                    ),
-                  ),
-                  Expanded(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 4.0),
-                      child: TextField(
-                        focusNode: _focusNode,
-                        controller: _messageController,
-                        readOnly: isReadOnly,
-                        style: TextStyle(color: theme.textTheme.bodyLarge?.color),
-                        keyboardType: TextInputType.multiline,
-                        maxLines: null,
-                        textCapitalization: TextCapitalization.sentences,
-                        decoration: InputDecoration(
-                          hintText: hintText,
-                          border: InputBorder.none,
-                          contentPadding: EdgeInsets.symmetric(horizontal: 12),
+    
+    return StreamBuilder<DatabaseEvent>(
+      stream: _presenceStream,
+      builder: (context, snapshot) {
+        String finalHintText = hintText ?? "Message...";
+        if (hintText == null) {
+          if (isGameVisible) {
+            finalHintText = "Koresha ijwi mu mukino...";
+          } else if (snapshot.hasData && snapshot.data!.snapshot.value != null) {
+            try {
+              final data = snapshot.data!.snapshot.value as Map<dynamic, dynamic>;
+              final state = data['state'];
+              if (state == 'offline') {
+                final timestamp = data['last_changed'] as int;
+                finalHintText = _formatLastSeen(timestamp);
+              }
+            } catch(e) {
+              finalHintText = "Message...";
+            }
+          }
+        }
+        
+        final theme = Theme.of(context);
+        bool finalIsReadOnly = isReadOnly ?? isGameVisible;
+        
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 12.0),
+          color: theme.scaffoldBackgroundColor,
+          child: Stack(
+            alignment: Alignment.bottomRight,
+            children: [
+              Material(
+                elevation: 4,
+                borderRadius: BorderRadius.circular(30),
+                shadowColor: Colors.black.withAlpha(77),
+                child: Container(
+                  constraints: const BoxConstraints(minHeight: 52),
+                  decoration: BoxDecoration(color: theme.cardColor, borderRadius: BorderRadius.circular(30),),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.only(left: 8.0),
+                        child: IconButton(
+                          icon: Icon(_isEmojiPickerVisible ? Icons.keyboard : Icons.emoji_emotions_outlined, color: theme.iconTheme.color?.withAlpha(179)),
+                          onPressed: finalIsReadOnly ? null : _toggleEmojiPicker,
                         ),
-                        onTap: () {
-                          if (isReadOnly) return;
-                          if (_showEmojiPicker) Navigator.pop(context);
-                          if (_isTextFieldReadOnly) {
+                      ),
+                      Expanded(
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 4.0),
+                          child: TextField(
+                            focusNode: _focusNode,
+                            controller: _messageController,
+                            readOnly: finalIsReadOnly,
+                            style: TextStyle(color: theme.textTheme.bodyLarge?.color),
+                            keyboardType: TextInputType.multiline,
+                            maxLines: null,
+                            textCapitalization: TextCapitalization.sentences,
+                            decoration: InputDecoration(
+                              hintText: finalHintText,
+                              border: InputBorder.none,
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+                              fillColor: finalIsReadOnly ? Colors.grey.withOpacity(0.1) : null,
+                              filled: finalIsReadOnly,
+                            ),
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                          icon: Icon(Icons.attach_file, color: theme.iconTheme.color?.withAlpha(179)),
+                          onPressed: finalIsReadOnly ? null : _showAnimatedDialogMenu
+                      ),
+                      const SizedBox(width: 55),
+                    ],
+                  ),
+                ),
+              ),
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 250),
+                transitionBuilder: (child, animation) {
+                  return ScaleTransition(scale: animation, child: child);
+                },
+                child: _isComposing && !isGameVisible
+                    ? FloatingActionButton(key: const ValueKey('send_button'), onPressed: () => _sendMessage(messageType: 'text'), backgroundColor: theme.colorScheme.primary, elevation: 2, child: Icon(Icons.send, color: theme.colorScheme.onPrimary),)
+                    : SocialMediaRecorder(
+                        key: const ValueKey('mic_recorder'),
+                        sendRequestFunction: (File soundFile, String duration) async {
+                          _myActivityStatusRef?.set("idle");
+                          int durationInSeconds = 0;
+                          try {
+                            final parts = duration.split(':');
+                            if (parts.length == 2) {
+                              durationInSeconds = int.parse(parts[0]) * 60 + int.parse(parts[1]);
+                            }
+                          } catch (e) {
+                            debugPrint("Error parsing duration: $e");
+                          }
+                          final permanentPath = await mediaUploadService.saveFilePermanently(soundFile.path);
+                          await mediaUploadService.sendMediaMessage(
+                            chatRoomID: _getChatRoomID(),
+                            receiverID: widget.receiverID,
+                            localPath: permanentPath,
+                            messageType: 'voice_note',
+                            duration: durationInSeconds,
+                            fileName: path.basename(permanentPath)
+                          );
+                          _loadInitialMessages(forceReload: true);
+                        },
+                        recordIcon: FloatingActionButton(
+                          key: const ValueKey('mic_button'), 
+                          onPressed: () { _myActivityStatusRef?.set("recording"); }, 
+                          backgroundColor: theme.colorScheme.secondary,
+                          elevation: 2, 
+                          child: Icon(Icons.mic, color: theme.colorScheme.onSecondary),
+                        ),
+                ),
+              ),
+            ],
+          ),
+        );
+      }
+    );
+  }
+  
+  Widget _buildPhotoPreviewComposer() {
+    final theme = Theme.of(context);
+    final screenHeight = MediaQuery.of(context).size.height;
+    
+    return Container(
+      height: screenHeight * 0.4,
+      color: theme.scaffoldBackgroundColor,
+      child: Material(
+        color: theme.cardColor,
+        elevation: 8,
+        child: Column(
+          children: [
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: Image.memory(_selectedImageData!, fit: BoxFit.contain),
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 0, 8, 16),
+              child: Column(
+                children: [
+                  Row(
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.edit_outlined),
+                        onPressed: () async {
+                          final editedImageBytes = await Navigator.push<Uint8List?>(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => ImageEditor(image: _selectedImageData!),
+                            ),
+                          );
+                          if (editedImageBytes != null && mounted) {
                             setState(() {
-                              _isTextFieldReadOnly = false;
-                            });
-                            WidgetsBinding.instance.addPostFrameCallback((_) {
-                              if (mounted) _focusNode.requestFocus();
+                              _selectedImageData = editedImageBytes;
                             });
                           }
                         },
                       ),
+                      Expanded(
+                        child: TextField(
+                          controller: _captionController,
+                          style: TextStyle(color: theme.textTheme.bodyLarge?.color),
+                          decoration: const InputDecoration(
+                            hintText: "Ongerako amajambo...",
+                            border: InputBorder.none,
+                            contentPadding: EdgeInsets.symmetric(horizontal: 12),
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close),
+                        onPressed: _cancelPhotoSelection,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  ElevatedButton.icon(
+                    onPressed: _sendPhoto,
+                    icon: const Icon(Icons.send),
+                    label: const Text("OHEREZA"),
+                    style: ElevatedButton.styleFrom(
+                      minimumSize: const Size(double.infinity, 40),
                     ),
-                  ),
-                  IconButton(
-                      icon: Icon(Icons.attach_file, color: theme.iconTheme.color?.withAlpha(179)),
-                      onPressed: isReadOnly ? null : _showAnimatedDialogMenu
-                  ),
-                  const SizedBox(width: 55),
+                  )
                 ],
               ),
             ),
-          ),
-          AnimatedSwitcher(
-            duration: const Duration(milliseconds: 250),
-            transitionBuilder: (child, animation) {
-              return ScaleTransition(scale: animation, child: child);
-            },
-            child: _isComposing && !isGameActive
-                ? FloatingActionButton(key: const ValueKey('send_button'), onPressed: () => _sendMessage(messageType: 'text'), backgroundColor: theme.colorScheme.primary, elevation: 2, child: Icon(Icons.send, color: theme.colorScheme.onPrimary),)
-                : SocialMediaRecorder(
-                    key: const ValueKey('mic_recorder'), 
-                    sendRequestFunction: (File soundFile, String duration) async {
-                      int durationInSeconds = 0;
-                      try {
-                        final parts = duration.split(':');
-                        if (parts.length == 2) {
-                          durationInSeconds = int.parse(parts[0]) * 60 + int.parse(parts[1]);
-                        }
-                      } catch (e) {
-                        debugPrint("Error parsing duration: $e");
-                      }
-                      final permanentPath = await mediaUploadService.saveFilePermanently(soundFile.path);
-                      await mediaUploadService.sendMediaMessage(
-                        chatRoomID: _getChatRoomID(),
-                        receiverID: widget.receiverID,
-                        localPath: permanentPath,
-                        messageType: 'voice_note',
-                        duration: durationInSeconds,
-                        fileName: path.basename(permanentPath)
-                      );
-                    },
-                    recordIcon: FloatingActionButton(key: const ValueKey('mic_button'), onPressed: isReadOnly ? null : () {}, backgroundColor: isReadOnly ? Colors.grey : theme.colorScheme.secondary, elevation: 2, child: Icon(Icons.mic, color: theme.colorScheme.onSecondary),),
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -1167,6 +1470,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   }
 
   void _showAnimatedDialogMenu() {
+    _focusNode.unfocus();
     showGeneralDialog(
       context: context, barrierDismissible: true, barrierLabel: '', transitionDuration: const Duration(milliseconds: 400),
       pageBuilder: (context, animation, secondaryAnimation) => Container(),
@@ -1253,74 +1557,118 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       leading: IconButton(icon: const Icon(Icons.arrow_back), onPressed: _navigateBackToHome),
       title: InkWell(
         onTap: _navigateToContactInfo,
-        child: Column(
+        child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
           children: [
-            StreamBuilder<DocumentSnapshot>(
-                stream: _receiverUserStream,
-                builder: (context, snapshot) {
-                  String? photoUrl;
-                  if (snapshot.hasData && snapshot.data!.exists) {
-                    final userData = snapshot.data!.data() as Map<String, dynamic>?;
-                    photoUrl = userData?['photoUrl'];
+            const Spacer(),
+            _PresenceIndicator(presenceStream: _presenceStream),
+            const SizedBox(width: 8),
+            Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                StreamBuilder<DocumentSnapshot>(
+                  stream: _currentUserStream,
+                  builder: (context, currentUserSnapshot) {
+                    return StreamBuilder<DocumentSnapshot>(
+                      stream: _receiverUserStream,
+                      builder: (context, receiverSnapshot) {
+                        String? photoUrl;
+                        if (currentUserSnapshot.hasData && receiverSnapshot.hasData) {
+                          final currentUserData = currentUserSnapshot.data?.data() as Map<String, dynamic>?;
+                          final myBlockedUsers = currentUserData?['blockedUsers'] as List<dynamic>? ?? [];
+                          final iHaveBlockedReceiver = myBlockedUsers.contains(widget.receiverID);
+
+                          final receiverData = receiverSnapshot.data?.data() as Map<String, dynamic>?;
+                          final receiverBlockedUsers = receiverData?['blockedUsers'] as List<dynamic>? ?? [];
+                          final amIBlockedByReceiver = receiverBlockedUsers.contains(_auth.currentUser!.uid);
+                          
+                          if (!iHaveBlockedReceiver && !amIBlockedByReceiver) {
+                              photoUrl = receiverData?['photoUrl'];
+                          }
+                        }
+                        
+                        return CircleAvatar(
+                          radius: 20, 
+                          backgroundImage: photoUrl != null ? NetworkImage(photoUrl) : null, 
+                          child: photoUrl == null ? const Icon(Icons.person, size: 22) : null,
+                        );
+                      },
+                    );
                   }
-                  return CircleAvatar(radius: 20, backgroundImage: photoUrl != null ? NetworkImage(photoUrl) : null, child: photoUrl == null ? const Icon(Icons.person, size: 22) : null);
-                }
+                ),
+                const SizedBox(height: 3),
+                Text(widget.receiverEmail, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.normal), overflow: TextOverflow.ellipsis,),
+              ],
             ),
-            const SizedBox(height: 3),
-            Text(widget.receiverEmail, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.normal), overflow: TextOverflow.ellipsis,),
+            const SizedBox(width: 8),
+            _ActivityIndicator(activityStream: _activityStream),
+            const Spacer(),
           ],
         ),
       ),
       actions: [
-        PopupMenuButton<String>(
-          onSelected: _handleMenuSelection,
-          itemBuilder: (context) {
-            final isReceiverBlocked = false; 
-            return <PopupMenuEntry<String>>[
-              const PopupMenuItem<String>(value: 'view_contact', child: Text('Ibimuranga')),
-              const PopupMenuItem<String>(value: 'wallpaper', child: Text("Ifoto y'inyuma")),
-              const PopupMenuItem<String>(value: 'clear_chat', child: Text('Futa ibiganiro')),
-              PopupMenuItem<String>(value: 'block', child: Text(isReceiverBlocked ? 'Mufungure' : 'Mubloke'))
-            ];
+        StreamBuilder<DocumentSnapshot>(
+          stream: _currentUserStream,
+          builder: (context, snapshot) {
+            bool isReceiverBlocked = false;
+            if (snapshot.hasData && snapshot.data!.exists) {
+              final userData = snapshot.data!.data() as Map<String, dynamic>?;
+              final blockedUsers = userData?['blockedUsers'] as List<dynamic>? ?? [];
+              isReceiverBlocked = blockedUsers.contains(widget.receiverID);
+            }
+            return PopupMenuButton<String>(
+              onSelected: (value) => _handleMenuSelection(value, isReceiverBlocked: isReceiverBlocked),
+              itemBuilder: (context) => <PopupMenuEntry<String>>[
+                const PopupMenuItem<String>(value: 'view_contact', child: Text('Ibimuranga')),
+                const PopupMenuItem<String>(value: 'wallpaper', child: Text("Ifoto y'inyuma")),
+                const PopupMenuItem<String>(value: 'clear_chat', child: Text('Futa ibiganiro')),
+                PopupMenuItem<String>(value: 'block', child: Text(isReceiverBlocked ? 'Mufungure' : 'Mubloke')),
+              ],
+            );
           },
-        )
+        ),
       ],
     );
   }
 
-  Widget _buildLiveGameArea(AsyncSnapshot<DocumentSnapshot<Object?>> gameSnapshot) {
+  Future<void> _stopGame() async {
+    final chatRoomID = _getChatRoomID();
+    final gameRef = _firestore.collection('games').doc(chatRoomID);
+
+    final gameDoc = await gameRef.get();
+    if(gameDoc.exists) {
+        await gameRef.update({
+        'status': 'stopped',
+        'stoppedBy': _auth.currentUser!.uid,
+      });
+    }
+
+    setState(() {
+      _isGameHardStopped = true;
+    });
+  }
+
+  Widget _buildLiveGameArea() {
     Widget? gameWidget;
+
     if (_isGameHardStopped) {
       gameWidget = null;
-    } else if (_optimisticGameData != null) {
+    } else if (_currentGameData != null && (_currentGameData!['status'] == 'active' || _currentGameData!['status'] == 'finished')) {
       gameWidget = DameGameWidget(
-          chatRoomID: _getChatRoomID(),
-          gameData: _optimisticGameData!,
-          key: const ValueKey('optimistic_game')
+        chatRoomID: _getChatRoomID(),
+        gameData: _currentGameData!,
+        opponentDisplayName: widget.receiverEmail,
+        key: ValueKey('game_${_currentGameData!['status']}'),
+        onGameStopped: _stopGame,
       );
-    } else if (gameSnapshot.hasData && gameSnapshot.data!.exists) {
-      final gameData = gameSnapshot.data!.data() as Map<String, dynamic>;
-      if (gameData['status'] == 'active') {
-        gameWidget = DameGameWidget(
-          chatRoomID: _getChatRoomID(),
-          gameData: gameData,
-          opponentDisplayName: widget.receiverEmail,
-          key: const ValueKey('active_game'),
-          onGameStopped: () {
-            setState(() {
-              _isGameHardStopped = true;
-            });
-          },
-        );
-      }
     }
-    
-    if (gameWidget == null && (_isPreparingInvitation || _isWaitingForGameAcceptance)) {
-      final initialBoard = List.generate(8, (row) => List.generate(8, (col) {
+
+    if (gameWidget == null && _isPreparingInvitation) {
+      final initialBoard = List.generate(10, (row) => List.generate(10, (col) {
         if ((row + col) % 2 != 0) {
-          if (row < 3) return {'player': 2, 'type': 'man'};
-          if (row > 4) return {'player': 1, 'type': 'man'};
+          if (row < 4) return {'player': 2, 'type': 'man'};
+          if (row > 5) return {'player': 1, 'type': 'man'};
         }
         return null;
       }));
@@ -1340,19 +1688,226 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         },
       );
     }
+
+    if (gameWidget == null && _optimisticGameData != null) {
+      gameWidget = DameGameWidget(
+          chatRoomID: _getChatRoomID(),
+          gameData: _optimisticGameData!,
+          key: const ValueKey('optimistic_game'),
+          onGameStopped: _stopGame,
+      );
+    }
     
-    return AnimatedSwitcher(
-      duration: const Duration(milliseconds: 1200),
-      switchInCurve: Curves.easeOutQuart,
-      switchOutCurve: Curves.easeInQuart,
-      transitionBuilder: (child, animation) {
-        return SizeTransition(
-          sizeFactor: animation,
-          axisAlignment: -1.0,
-          child: child,
+    return gameWidget ?? const SizedBox.shrink(key: ValueKey('no_game'));
+  }
+}
+
+class _PresenceIndicator extends StatefulWidget {
+  final Stream<DatabaseEvent>? presenceStream;
+  const _PresenceIndicator({required this.presenceStream});
+
+  @override
+  State<_PresenceIndicator> createState() => _PresenceIndicatorState();
+}
+
+class _PresenceIndicatorState extends State<_PresenceIndicator> with SingleTickerProviderStateMixin {
+  late AnimationController _animationController;
+  late Animation<double> _animation;
+
+  @override
+  void initState() {
+    super.initState();
+    _animationController = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 1),
+    )..repeat(reverse: true);
+    _animation = Tween<double>(begin: 0.7, end: 1.0).animate(
+      CurvedAnimation(parent: _animationController, curve: Curves.easeInOut),
+    );
+  }
+
+  @override
+  void dispose() {
+    _animationController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<DatabaseEvent>(
+      stream: widget.presenceStream,
+      builder: (context, snapshot) {
+        if (snapshot.hasData && snapshot.data!.snapshot.value != null) {
+          try {
+            final data = snapshot.data!.snapshot.value as Map<dynamic, dynamic>;
+            final state = data['state'];
+            if (state == 'online') {
+              return FadeTransition(
+                opacity: _animation,
+                child: Container(
+                  width: 16,
+                  height: 16,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Colors.greenAccent,
+                    border: Border.all(color: Colors.white, width: 2),
+                  ),
+                ),
+              );
+            }
+          } catch(e) { /* ignore */ }
+        }
+        return const SizedBox(width: 16);
+      },
+    );
+  }
+}
+
+class _ActivityIndicator extends StatefulWidget {
+  final Stream<DatabaseEvent>? activityStream;
+  const _ActivityIndicator({required this.activityStream});
+
+  @override
+  State<_ActivityIndicator> createState() => _ActivityIndicatorState();
+}
+
+class _ActivityIndicatorState extends State<_ActivityIndicator> {
+  late Timer _timer;
+  late String _timeString;
+
+  @override
+  void initState() {
+    super.initState();
+    _timeString = _formatDateTime(DateTime.now());
+    _timer = Timer.periodic(const Duration(seconds: 1), (Timer t) => _updateTime());
+  }
+
+  @override
+  void dispose() {
+    _timer.cancel();
+    super.dispose();
+  }
+  
+  void _updateTime() {
+    if (mounted) {
+      setState(() {
+        _timeString = _formatDateTime(DateTime.now());
+      });
+    }
+  }
+
+  String _formatDateTime(DateTime dateTime) {
+    // Iyi sura ituma (:) inyeganyega buri segonda
+    String separator = dateTime.second.isEven ? ':' : ' ';
+    return DateFormat('HH${separator}mm').format(dateTime);
+  }
+  
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    
+    return StreamBuilder<DatabaseEvent>(
+      stream: widget.activityStream,
+      builder: (context, snapshot) {
+        String activity = "idle";
+        if (snapshot.hasData && snapshot.data!.snapshot.value != null) {
+          activity = snapshot.data!.snapshot.value as String;
+        }
+
+        Widget content;
+        
+        switch(activity) {
+          case 'typing':
+            content = _buildActivityContent(
+              key: 'typing',
+              icon: Icons.edit,
+              text: "Ariko arandika...",
+              theme: theme
+            );
+            break;
+          case 'recording':
+            content = _buildActivityContent(
+              key: 'recording',
+              icon: Icons.mic,
+              text: "Ariko afat'ijwi...",
+              theme: theme
+            );
+            break;
+          default: // idle
+            content = _buildClockContent(
+              key: 'idle',
+              theme: theme
+            );
+            break;
+        }
+
+        return AnimatedSwitcher(
+          duration: const Duration(milliseconds: 400),
+          transitionBuilder: (child, animation) {
+            return FadeTransition(
+              opacity: animation,
+              child: SizeTransition(
+                sizeFactor: animation,
+                axis: Axis.horizontal,
+                child: child,
+              ),
+            );
+          },
+          child: content,
         );
       },
-      child: gameWidget ?? const SizedBox.shrink(key: ValueKey('no_game')),
+    );
+  }
+
+  Widget _buildClockContent({required String key, required ThemeData theme}) {
+    return Container(
+      key: ValueKey(key),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      decoration: BoxDecoration(
+        color: theme.cardColor.withOpacity(0.4),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.access_time, size: 14, color: theme.textTheme.bodySmall?.color?.withOpacity(0.7)),
+          const SizedBox(width: 6),
+          Text(
+            _timeString,
+            style: TextStyle(
+              fontSize: 12,
+              color: theme.textTheme.bodySmall?.color?.withOpacity(0.9),
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+  
+  Widget _buildActivityContent({required String key, required IconData icon, required String text, required ThemeData theme}) {
+    return Container(
+      key: ValueKey(key),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.secondaryContainer.withOpacity(0.5),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 12, color: theme.colorScheme.onSecondaryContainer),
+          const SizedBox(width: 6),
+          Text(
+            text,
+            style: TextStyle(
+              fontSize: 10,
+              color: theme.colorScheme.onSecondaryContainer,
+              fontStyle: FontStyle.italic,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -1364,6 +1919,7 @@ class DateSeparator extends StatelessWidget {
   Widget build(BuildContext context) => Center(child: Padding(padding: const EdgeInsets.symmetric(vertical: 12.0), child: Chip(label: Text(date), backgroundColor: Theme.of(context).cardColor.withAlpha(204))));
 }
 
+
 class ImageBubble extends StatefulWidget {
   final Map<String, dynamic> messageData;
   const ImageBubble({super.key, required this.messageData});
@@ -1373,66 +1929,243 @@ class ImageBubble extends StatefulWidget {
 }
 
 class _ImageBubbleState extends State<ImageBubble> {
+  bool _isDownloading = false;
+  double? _downloadProgress;
+  bool _localFileExists = false;
+  String? _localPath;
+  http.Client? _httpClient;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkIfFileExists();
+  }
+
+  @override
+  void dispose() {
+    _httpClient?.close();
+    super.dispose();
+  }
+
+  @override
+  void didUpdateWidget(covariant ImageBubble oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final oldPath = oldWidget.messageData[DatabaseHelper.columnLocalPath];
+    final newPath = widget.messageData[DatabaseHelper.columnLocalPath];
+    if (newPath != oldPath) {
+      _checkIfFileExists();
+    }
+  }
+
+  Future<void> _checkIfFileExists() async {
+    _localPath = widget.messageData[DatabaseHelper.columnLocalPath];
+    if (_localPath != null && await File(_localPath!).exists()) {
+      if (mounted) {
+        setState(() {
+          _localFileExists = true;
+        });
+      }
+    } else {
+      if (mounted) {
+        setState(() {
+          _localFileExists = false;
+        });
+      }
+    }
+  }
+
+  void _handleDownloadTap() {
+    if (_isDownloading) {
+      _cancelDownload();
+    } else {
+      _startDownload();
+    }
+  }
+  
+  void _cancelDownload() {
+    _httpClient?.close();
+    _httpClient = null;
+    if (mounted) {
+      setState(() {
+        _isDownloading = false;
+        _downloadProgress = null;
+      });
+    }
+  }
+
+  Future<void> _startDownload() async {
+    final onlineUrl = widget.messageData[DatabaseHelper.columnFileUrl];
+    final messageId = widget.messageData[DatabaseHelper.columnId];
+
+    if (onlineUrl == null) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Ifoto ntiragera kuri server. Tegereza gato.")));
+      return;
+    }
+
+    setState(() {
+      _isDownloading = true;
+      _downloadProgress = 0.0;
+    });
+
+    try {
+      _httpClient = http.Client();
+      final request = http.Request('GET', Uri.parse(onlineUrl));
+      final response = await _httpClient!.send(request);
+
+      if (response.statusCode == 200) {
+        final documentsDir = await getApplicationDocumentsDirectory();
+        final chatMediaDir = Directory(path.join(documentsDir.path, 'chat_media'));
+        if (!await chatMediaDir.exists()) {
+          await chatMediaDir.create(recursive: true);
+        }
+
+        final fileName = path.basename(Uri.parse(onlineUrl).path);
+        final file = File(path.join(chatMediaDir.path, fileName));
+        
+        final sink = file.openWrite();
+        final totalBytes = response.contentLength ?? -1;
+        int receivedBytes = 0;
+
+        await response.stream.listen((List<int> chunk) {
+          if(!mounted || !_isDownloading) {
+            sink.close();
+            _httpClient?.close();
+            return;
+          }
+          receivedBytes += chunk.length;
+          if (totalBytes != -1) {
+            setState(() => _downloadProgress = receivedBytes / totalBytes);
+          }
+          sink.add(chunk);
+        }).asFuture();
+
+        await sink.close();
+        
+        await DatabaseHelper.instance.updateMessageLocalPath(messageId, file.path);
+        
+        if (mounted) {
+           _localPath = file.path;
+           setState(() {
+             _localFileExists = true;
+             _isDownloading = false;
+             _downloadProgress = null;
+           });
+        }
+
+      } else {
+        throw Exception('Gukurura byanze: Status Code ni ${response.statusCode}');
+      }
+    } catch (e) {
+      if (e is http.ClientException) {
+        debugPrint("Gukurura ifoto byahagaritswe.");
+      } else {
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Gukurura ifoto byanze: $e")));
+      }
+      if(mounted) {
+        setState(() {
+          _isDownloading = false;
+          _downloadProgress = null;
+        });
+      }
+    } finally {
+      _httpClient?.close();
+      _httpClient = null;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final localPath = widget.messageData[DatabaseHelper.columnLocalPath];
-    final remoteUrl = widget.messageData[DatabaseHelper.columnFileUrl];
     final caption = widget.messageData[DatabaseHelper.columnMessage] as String?;
-    
     final isMe = widget.messageData['senderID'] == FirebaseAuth.instance.currentUser!.uid;
     final textColor = isMe ? Theme.of(context).colorScheme.onPrimaryContainer : Theme.of(context).colorScheme.onSurface;
-
-    ImageProvider? imageProvider;
-
-    if (localPath != null && File(localPath).existsSync()) {
-      imageProvider = FileImage(File(localPath));
-    } else if (remoteUrl != null) {
-      imageProvider = NetworkImage(remoteUrl);
-    }
-
-    if (imageProvider == null) {
-      return Container(
-        width: 250,
-        height: 200,
-        decoration: BoxDecoration(
-          color: Colors.grey[800],
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: const Center(child: CircularProgressIndicator()),
-      );
-    }
+    final remoteUrl = widget.messageData[DatabaseHelper.columnFileUrl];
     
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         ClipRRect(
           borderRadius: BorderRadius.circular(8),
-          child: Image(
-            image: imageProvider,
-            fit: BoxFit.cover,
-            loadingBuilder: (context, child, loadingProgress) {
-              if (loadingProgress == null) return child;
-              return Container(
-                width: 250,
-                height: 200,
-                color: Colors.grey[800],
-                child: Center(
-                  child: CircularProgressIndicator(
-                    value: loadingProgress.expectedTotalBytes != null
-                        ? loadingProgress.cumulativeBytesLoaded / loadingProgress.expectedTotalBytes!
-                        : null,
+          child: Container(
+            height: 250,
+            width: 250,
+            color: Colors.black,
+            child: Stack(
+              fit: StackFit.expand,
+              alignment: Alignment.center,
+              children: [
+                if (_localFileExists && _localPath != null)
+                  GestureDetector(
+                    onTap: () {
+                       if (remoteUrl != null) {
+                        Navigator.push(
+                          context,
+                          PageRouteBuilder(
+                            pageBuilder: (context, animation, secondaryAnimation) => FullPhotoScreen(
+                              imageUrl: remoteUrl,
+                              heroTag: remoteUrl, 
+                            ),
+                            transitionDuration: const Duration(milliseconds: 700),
+                            transitionsBuilder: (context, animation, secondaryAnimation, child) {
+                              return FadeTransition(opacity: animation, child: child);
+                            },
+                          ),
+                        );
+                       }
+                    },
+                    child: Image.file(
+                      File(_localPath!),
+                      fit: BoxFit.cover,
+                       errorBuilder: (context, error, stackTrace) {
+                          return Container(
+                            color: Colors.grey[800],
+                            child: const Center(child: Icon(Icons.broken_image, color: Colors.white60)),
+                          );
+                        },
+                    ),
+                  )
+                else
+                  Container(
+                    color: Colors.grey[900],
+                    child: const Icon(Icons.image_outlined, color: Colors.white54, size: 50),
                   ),
-                ),
-              );
-            },
-            errorBuilder: (context, error, stackTrace) {
-              return Container(
-                width: 250,
-                height: 200,
-                color: Colors.grey[800],
-                child: const Center(child: Icon(Icons.broken_image, color: Colors.white60)),
-              );
-            },
+                
+                if (!_localFileExists)
+                   Positioned.fill(
+                     child: GestureDetector(
+                        onTap: _handleDownloadTap,
+                        child: Container(
+                          color: Colors.black.withOpacity(0.4),
+                          child: Center(
+                            child: _isDownloading
+                                ? SizedBox(
+                                    width: 50,
+                                    height: 50,
+                                    child: Stack(
+                                      fit: StackFit.expand,
+                                      children: [
+                                        CircularProgressIndicator(
+                                          value: _downloadProgress,
+                                          color: Colors.white,
+                                          backgroundColor: Colors.white30,
+                                          strokeWidth: 3,
+                                        ),
+                                        const Center(
+                                          child: Icon(Icons.close, color: Colors.white70, size: 25),
+                                        ),
+                                      ],
+                                    ),
+                                  )
+                                : const Icon(
+                                    Icons.download_for_offline,
+                                    color: Colors.white,
+                                    size: 50,
+                                  ),
+                          ),
+                        ),
+                      ),
+                   ),
+              ],
+            ),
           ),
         ),
         if (caption != null && caption.isNotEmpty)
@@ -1562,9 +2295,8 @@ class VoiceBubble extends StatelessWidget {
 class VideoPlayerBubble extends StatefulWidget {
   final Map<String, dynamic> messageData;
   final String? caption;
-  final bool isOptimistic;
 
-  const VideoPlayerBubble({super.key, required this.messageData, this.caption, this.isOptimistic = false});
+  const VideoPlayerBubble({super.key, required this.messageData, this.caption});
 
   @override
   State<VideoPlayerBubble> createState() => _VideoPlayerBubbleState();
@@ -1622,9 +2354,7 @@ class _VideoPlayerBubbleState extends State<VideoPlayerBubble> {
         setState(() {
           _localFileExists = true;
         });
-        if (!widget.isOptimistic) {
-           _initializeController();
-        }
+        _initializeController();
       }
     } else {
       if (mounted) {
@@ -1855,7 +2585,7 @@ class _VideoPlayerBubbleState extends State<VideoPlayerBubble> {
               fit: StackFit.expand,
               alignment: Alignment.center,
               children: [
-                if (!widget.isOptimistic && _controller != null && _controller!.value.isInitialized)
+                if (_controller != null && _controller!.value.isInitialized)
                   GestureDetector(
                     onTap: _toggleControlsVisibility,
                     child: AspectRatio(
@@ -1872,8 +2602,7 @@ class _VideoPlayerBubbleState extends State<VideoPlayerBubble> {
                 else
                   Container(color: Colors.black87, child: const Icon(Icons.videocam, color: Colors.white54, size: 50)),
                 
-                if (!widget.isOptimistic) ...[
-                  if (_localFileExists) ...[
+                if (_localFileExists) ...[
                     GestureDetector(
                       onTap: _toggleControlsVisibility,
                       child: AnimatedOpacity(
@@ -1979,7 +2708,6 @@ class _VideoPlayerBubbleState extends State<VideoPlayerBubble> {
                       ),
                     ),
                   ]
-                ],
               ],
             ),
           ),
@@ -2002,9 +2730,6 @@ class MessageBubble extends StatefulWidget {
   final double? uploadProgress;
   final VoidCallback? onAcceptInvitation;
   final VoidCallback? onDeclineInvitation;
-  final bool isOptimistic;
-  final VoidCallback? onSendOptimistic;
-  final VoidCallback? onCancelOptimistic;
 
   const MessageBubble({
     super.key,
@@ -2014,9 +2739,6 @@ class MessageBubble extends StatefulWidget {
     this.uploadProgress,
     this.onAcceptInvitation,
     this.onDeclineInvitation,
-    this.isOptimistic = false,
-    this.onSendOptimistic,
-    this.onCancelOptimistic,
   });
 
   @override
@@ -2047,6 +2769,8 @@ class _MessageBubbleState extends State<MessageBubble> {
         color = Colors.red.shade400;
         break;
       case 'pending':
+      case 'uploading':
+      case 'paused':
       default:
         icon = Icons.watch_later_outlined;
         color = theme.textTheme.bodyMedium?.color ?? Colors.grey;
@@ -2069,7 +2793,7 @@ class _MessageBubbleState extends State<MessageBubble> {
     final bubbleColor = isLargeEmoji ? Colors.transparent : (widget.isSelected ? Colors.blue.withAlpha(128) : (widget.isMe ? theme.colorScheme.primaryContainer : theme.colorScheme.surface));
     final textColor = widget.isMe ? theme.colorScheme.onPrimaryContainer : theme.colorScheme.onSurface;
 
-    final bool isUploading = widget.uploadProgress != null && widget.messageData['status'] == 'pending';
+    final bool isUploading = widget.uploadProgress != null && (widget.messageData['status'] == 'uploading' || widget.messageData['status'] == 'paused');
 
     int? timestampValue;
     if (widget.messageData['timestamp'] is int) {
@@ -2086,8 +2810,8 @@ class _MessageBubbleState extends State<MessageBubble> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(_formatMessageTimestamp(timestampValue), style: TextStyle(fontSize: 10, color: textColor.withAlpha(179)),),
-            if (widget.isMe && !widget.isOptimistic) const SizedBox(width: 4),
-            if (widget.isMe && !widget.isOptimistic) _buildStatusIcon(widget.messageData['status'], theme),
+            if (widget.isMe) const SizedBox(width: 4),
+            if (widget.isMe) _buildStatusIcon(widget.messageData['status'], theme),
           ],
         )
       ],
@@ -2105,45 +2829,6 @@ class _MessageBubbleState extends State<MessageBubble> {
             decoration: BoxDecoration(color: bubbleColor, borderRadius: BorderRadius.circular(12)),
             child: messageContent,
           ),
-          
-          if (widget.isOptimistic)
-            Positioned.fill(
-              child: Container(
-                decoration: BoxDecoration(
-                  color: Colors.black.withAlpha(128),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        ElevatedButton(
-                          onPressed: widget.onCancelOptimistic,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.red,
-                            shape: const CircleBorder(),
-                            padding: const EdgeInsets.all(12),
-                          ),
-                          child: const Icon(Icons.close, color: Colors.white),
-                        ),
-                        const SizedBox(width: 40),
-                        ElevatedButton(
-                          onPressed: widget.onSendOptimistic,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Theme.of(context).colorScheme.primary,
-                            shape: const CircleBorder(),
-                            padding: const EdgeInsets.all(16),
-                          ),
-                          child: const Icon(Icons.send, color: Colors.white),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            )
         ],
       ),
     );
@@ -2214,7 +2899,6 @@ class _MessageBubbleState extends State<MessageBubble> {
         content = VideoPlayerBubble(
             messageData: data, 
             caption: data[DatabaseHelper.columnMessage],
-            isOptimistic: widget.isOptimistic,
         );
         break;
       case 'voice_note':
@@ -2242,13 +2926,38 @@ class _MessageBubbleState extends State<MessageBubble> {
           child: Container(
             decoration: BoxDecoration(color: Colors.black.withAlpha(128), borderRadius: BorderRadius.circular(8)),
             child: Center(
-              child: SizedBox(
-                width: 40, height: 40,
-                child: CircularProgressIndicator(
-                  value: widget.uploadProgress,
-                  backgroundColor: Colors.white.withAlpha(77),
-                  color: Colors.white,
-                  strokeWidth: 3,
+              child: GestureDetector(
+                onTap: () {
+                  if (data['status'] == 'paused') {
+                    syncService.resumeUpload(data[DatabaseHelper.columnId]);
+                  } else {
+                    syncService.pauseUpload(data[DatabaseHelper.columnId]);
+                  }
+                },
+                child: Container(
+                  width: 50,
+                  height: 50,
+                  decoration: const BoxDecoration(
+                    color: Colors.black54,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      CircularProgressIndicator(
+                        value: widget.uploadProgress,
+                        backgroundColor: Colors.white.withAlpha(77),
+                        color: Colors.white,
+                        strokeWidth: 3,
+                      ),
+                      Center(
+                        child: Icon(
+                          data['status'] == 'paused' ? Icons.play_arrow : Icons.pause,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),

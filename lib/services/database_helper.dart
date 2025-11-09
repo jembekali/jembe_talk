@@ -1,5 +1,6 @@
-// lib/services/database_helper.dart (VERSION NSHYA YUZUYE)
+// lib/services/database_helper.dart (VERSION FINAL, IKOSOYe, KANDI YUZUYE)
 
+import 'dart:convert';
 import 'dart:developer';
 import 'dart:io';
 import 'package:jembe_talk/models/call_data.dart';
@@ -9,8 +10,7 @@ import 'package:sqflite/sqflite.dart';
 
 class DatabaseHelper {
   static const _databaseName = "JembeTalk.db";
-  // <<< IMPINDUKA: Twongeye version kugira ngo database yiyuburure >>>
-  static const _databaseVersion = 21; 
+  static const _databaseVersion = 22; 
 
   static const int _postCacheLimit = 30;
 
@@ -41,7 +41,6 @@ class DatabaseHelper {
   static const columnWaveform = 'waveform';
   static const columnThumbnailLocalPath = 'thumbnailLocalPath';
   static const columnStoragePath = 'storagePath';
-  // <<< ONGERAMO IYI NKINGI NSHYA >>>
   static const columnThumbnailUrl = 'thumbnailUrl';
 
   static const colCallId = 'callId';
@@ -79,6 +78,7 @@ class DatabaseHelper {
   static const colTitle = 'title';
   static const colBody = 'body';
   static const colRelatedPostId = 'relatedPostId';
+  static const colBlockedUsers = 'blockedUsers';
 
   DatabaseHelper._privateConstructor();
   static final DatabaseHelper instance = DatabaseHelper._privateConstructor();
@@ -102,63 +102,41 @@ class DatabaseHelper {
       try {
         await db.execute("ALTER TABLE $tableMessages ADD COLUMN $columnThumbnailLocalPath TEXT");
         log("Successfully added thumbnailLocalPath column.");
-      } catch (e) {
-        log("Could not add thumbnailLocalPath column (maybe it exists?): $e");
-      }
+      } catch (e) { log("Could not add thumbnailLocalPath column (maybe it exists?): $e"); }
     }
     if (oldVersion < 20) {
       try {
         await db.execute("ALTER TABLE $tableMessages ADD COLUMN $columnStoragePath TEXT");
         log("Successfully added storagePath column.");
-      } catch (e) {
-        log("Could not add storagePath column (maybe it exists?): $e");
-      }
+      } catch (e) { log("Could not add storagePath column (maybe it exists?): $e"); }
     }
-    // <<< ONGERAMO IKI GICE GISHYA CYO KONGERA INKINGI NSHYA >>>
     if (oldVersion < 21) {
       try {
         await db.execute("ALTER TABLE $tableMessages ADD COLUMN $columnThumbnailUrl TEXT");
         log("Successfully added thumbnailUrl column.");
-      } catch (e) {
-        log("Could not add thumbnailUrl column (maybe it exists?): $e");
-      }
+      } catch (e) { log("Could not add thumbnailUrl column (maybe it exists?): $e"); }
+    }
+    if (oldVersion < 22) {
+      try {
+        await db.execute("ALTER TABLE $tableJembeContacts ADD COLUMN $colBlockedUsers TEXT");
+        log("Successfully added blockedUsers column to jembe_contacts.");
+      } catch (e) { log("Could not add blockedUsers column (maybe it exists?): $e"); }
     }
   }
 
   Future<void> _createTables(Database db) async {
     await db.execute(''' CREATE TABLE $tableMessages (
-      $columnId TEXT PRIMARY KEY, 
-      $columnChatRoomID TEXT, 
-      $columnSenderID TEXT, 
-      $columnReceiverID TEXT, 
-      $columnMessageType TEXT, 
-      $columnMessage TEXT, 
-      $columnFileUrl TEXT, 
-      $columnOnlineUrl TEXT, 
-      $columnLocalPath TEXT,
-      $columnFileName TEXT, 
-      $columnDuration INTEGER, 
-      $columnTimestamp INTEGER, 
-      $columnWaveform TEXT, 
-      $columnStatus TEXT,
-      $columnThumbnailLocalPath TEXT,
-      $columnStoragePath TEXT,
-      $columnThumbnailUrl TEXT 
+      $columnId TEXT PRIMARY KEY, $columnChatRoomID TEXT, $columnSenderID TEXT, $columnReceiverID TEXT, $columnMessageType TEXT, $columnMessage TEXT, $columnFileUrl TEXT, $columnOnlineUrl TEXT, $columnLocalPath TEXT, $columnFileName TEXT, $columnDuration INTEGER, $columnTimestamp INTEGER, $columnWaveform TEXT, $columnStatus TEXT, $columnThumbnailLocalPath TEXT, $columnStoragePath TEXT, $columnThumbnailUrl TEXT 
       )''');
-      
     await db.execute(''' CREATE TABLE $tableCalls (
       $colCallId TEXT PRIMARY KEY, $colCallerId TEXT, $colCallerName TEXT, $colReceiverId TEXT, $colReceiverName TEXT, $colStatus TEXT, $colIsVideo INTEGER, $columnTimestamp INTEGER, $colSeenByReceiver INTEGER
       )''');
     await db.execute(''' CREATE TABLE $tableSettings ( $columnKey TEXT PRIMARY KEY, $columnValue TEXT )''');
     await db.execute(''' CREATE TABLE $tableJembeContacts (
-        $colUserId TEXT PRIMARY KEY, $colDisplayName TEXT, $colPhotoUrl TEXT, $colPhoneNumber TEXT, $colEmail TEXT
+        $colUserId TEXT PRIMARY KEY, $colDisplayName TEXT, $colPhotoUrl TEXT, $colPhoneNumber TEXT, $colEmail TEXT, $colBlockedUsers TEXT
       )''');
     await db.execute(''' CREATE TABLE $tableStarNotifications (
-        $columnId TEXT PRIMARY KEY,
-        $colTitle TEXT,
-        $colBody TEXT,
-        $columnTimestamp INTEGER,
-        $colRelatedPostId TEXT
+        $columnId TEXT PRIMARY KEY, $colTitle TEXT, $colBody TEXT, $columnTimestamp INTEGER, $colRelatedPostId TEXT
       )''');
     await db.execute(''' CREATE TABLE $tablePosts ( 
       $colPostId TEXT PRIMARY KEY, $colUserId TEXT, $colUserName TEXT, $colUserImageUrl TEXT, $colText TEXT, $colImageUrl TEXT, $colVideoUrl TEXT, $colLikes INTEGER DEFAULT 0, $colCommentsCount INTEGER DEFAULT 0, $colViews INTEGER DEFAULT 0, $colTimestamp INTEGER NOT NULL, $colIsLikedByMe INTEGER DEFAULT 0, $colSyncStatus TEXT, $colIsStar INTEGER DEFAULT 0, $colLikedByJson TEXT, $colStarExpiryTimestamp INTEGER 
@@ -172,94 +150,52 @@ class DatabaseHelper {
     if (messageId == null) return;
 
     final List<Map<String, dynamic>> existingMessages = await db.query(
-      tableMessages,
-      where: '$columnId = ?',
-      whereArgs: [messageId],
+      tableMessages, where: '$columnId = ?', whereArgs: [messageId],
     );
 
     final Map<String, dynamic> messageToSave = Map.from(messageData);
 
     if (existingMessages.isNotEmpty) {
       final existingMessage = existingMessages.first;
-      
-      if (messageToSave[columnLocalPath] == null && existingMessage[columnLocalPath] != null) {
-        messageToSave[columnLocalPath] = existingMessage[columnLocalPath];
-      }
-      if (messageToSave[columnFileName] == null && existingMessage[columnFileName] != null) {
-        messageToSave[columnFileName] = existingMessage[columnFileName];
-      }
-      if (messageToSave[columnThumbnailLocalPath] == null && existingMessage[columnThumbnailLocalPath] != null) {
-        messageToSave[columnThumbnailLocalPath] = existingMessage[columnThumbnailLocalPath];
-      }
-      if (messageToSave[columnStoragePath] == null && existingMessage[columnStoragePath] != null) {
-        messageToSave[columnStoragePath] = existingMessage[columnStoragePath];
-      }
+      if (messageToSave[columnLocalPath] == null && existingMessage[columnLocalPath] != null) { messageToSave[columnLocalPath] = existingMessage[columnLocalPath]; }
+      if (messageToSave[columnFileName] == null && existingMessage[columnFileName] != null) { messageToSave[columnFileName] = existingMessage[columnFileName]; }
+      if (messageToSave[columnThumbnailLocalPath] == null && existingMessage[columnThumbnailLocalPath] != null) { messageToSave[columnThumbnailLocalPath] = existingMessage[columnThumbnailLocalPath]; }
+      if (messageToSave[columnStoragePath] == null && existingMessage[columnStoragePath] != null) { messageToSave[columnStoragePath] = existingMessage[columnStoragePath]; }
     }
-    
     messageToSave.putIfAbsent(columnWaveform, () => null);
-    
-    await db.insert(tableMessages, messageToSave,
-        conflictAlgorithm: ConflictAlgorithm.replace);
+    await db.insert(tableMessages, messageToSave, conflictAlgorithm: ConflictAlgorithm.replace);
   }
   
   Future<void> updateMessageStatus(String messageId, String status) async {
       final db = await database;
-      await db.update(
-          tableMessages,
-          {columnStatus: status},
-          where: '$columnId = ?',
-          whereArgs: [messageId],
-      );
+      await db.update( tableMessages, {columnStatus: status}, where: '$columnId = ?', whereArgs: [messageId]);
   }
 
   Future<void> updateMessageLocalPath(String messageId, String localPath) async {
     final db = await database;
-    await db.update(
-      tableMessages,
-      {columnLocalPath: localPath},
-      where: '$columnId = ?',
-      whereArgs: [messageId],
-    );
+    await db.update( tableMessages, {columnLocalPath: localPath}, where: '$columnId = ?', whereArgs: [messageId]);
   }
   
   Future<void> updateMessageFileUrl(String messageId, String fileUrl) async {
     final db = await instance.database;
-    await db.update(
-      tableMessages,
-      {columnFileUrl: fileUrl},
-      where: '$columnId = ?',
-      whereArgs: [messageId],
-    );
+    await db.update( tableMessages, {columnFileUrl: fileUrl}, where: '$columnId = ?', whereArgs: [messageId]);
     log("DatabaseHelper: URL y'ifayiri y'ubutumwa $messageId yavuguruwe.");
   }
 
   Future<void> updateMessageThumbnailLocalPath(String messageId, String thumbnailLocalPath) async {
     final db = await database;
-    await db.update(
-      tableMessages,
-      {columnThumbnailLocalPath: thumbnailLocalPath},
-      where: '$columnId = ?',
-      whereArgs: [messageId],
-    );
+    await db.update( tableMessages, {columnThumbnailLocalPath: thumbnailLocalPath}, where: '$columnId = ?', whereArgs: [messageId]);
   }
   
   Future<void> updateMessageStoragePathAndUrl(String messageId, String storagePath, String? fileUrl) async {
     final db = await instance.database;
-    await db.update(
-      tableMessages,
-      {
-        columnStoragePath: storagePath,
-        columnFileUrl: fileUrl,
-        columnStatus: 'sent',
-      },
-      where: '$columnId = ?',
-      whereArgs: [messageId],
-    );
+    await db.update( tableMessages, { columnStoragePath: storagePath, columnFileUrl: fileUrl, columnStatus: 'sent' }, where: '$columnId = ?', whereArgs: [messageId]);
   }
-
+  
+  // <<< IMPINDUKA NYAMUKURU: Twongera status ya "uploading" na "paused" >>>
   Future<List<Map<String, dynamic>>> getPendingMessages() async {
     final db = await instance.database;
-    return await db.query(tableMessages, where: '$columnStatus = ? OR $columnStatus = ?', whereArgs: ['pending', 'failed']);
+    return await db.query(tableMessages, where: '$columnStatus = ? OR $columnStatus = ? OR $columnStatus = ? OR $columnStatus = ?', whereArgs: ['pending', 'failed', 'uploading', 'paused']);
   }
   
   Future<List<Map<String, dynamic>>> getMessagesForChatRoom(String chatRoomID) async {
@@ -271,8 +207,7 @@ class DatabaseHelper {
     final db = await database;
     final batch = db.batch();
     for (var notification in notifications) {
-      batch.insert(tableStarNotifications, notification,
-          conflictAlgorithm: ConflictAlgorithm.replace);
+      batch.insert(tableStarNotifications, notification, conflictAlgorithm: ConflictAlgorithm.replace);
     }
     await batch.commit(noResult: true);
   }
@@ -297,7 +232,6 @@ class DatabaseHelper {
     final db = await database;
     final countResult = await db.rawQuery('SELECT COUNT(*) FROM $tablePosts WHERE $colIsStar = 0');
     final count = Sqflite.firstIntValue(countResult);
-
     if (count != null && count > _postCacheLimit) {
       final postsToDelete = count - _postCacheLimit;
       final oldestPosts = await db.query(tablePosts, columns: [colPostId], where: '$colIsStar = ?', whereArgs: [0], orderBy: '$colTimestamp ASC', limit: postsToDelete);
@@ -357,29 +291,20 @@ class DatabaseHelper {
   Future<void> updateMessageStatusAndOnlineUrl(String messageId, String status, String? onlineUrl) async {
     final db = await database;
     final values = {columnStatus: status};
-    if (onlineUrl != null) {
-      values[columnOnlineUrl] = onlineUrl;
-    }
+    if (onlineUrl != null) { values[columnOnlineUrl] = onlineUrl; }
     await db.update(tableMessages, values, where: '$columnId = ?', whereArgs: [messageId]);
   }
 
   Future<void> updateMessageStatusAndFileUrl(String messageId, String status, String? fileUrl) async {
     final db = await database;
     final values = {columnStatus: status};
-    if (fileUrl != null) {
-      values[columnFileUrl] = fileUrl;
-    }
+    if (fileUrl != null) { values[columnFileUrl] = fileUrl; }
     await db.update(tableMessages, values, where: '$columnId = ?', whereArgs: [messageId]);
   }
 
   Future<void> updateMessageFilePath(String messageId, String localPath) async {
     final db = await database;
-    await db.update(
-      tableMessages,
-      {columnLocalPath: localPath}, 
-      where: '$columnId = ?',
-      whereArgs: [messageId],
-    );
+    await db.update(tableMessages, {columnLocalPath: localPath}, where: '$columnId = ?', whereArgs: [messageId]);
   }
 
   Future<void> saveCall(CallData call) async {
@@ -403,6 +328,7 @@ class DatabaseHelper {
         colPhotoUrl: userData[colPhotoUrl],
         colPhoneNumber: userData[colPhoneNumber],
         colEmail: userData[colEmail],
+        colBlockedUsers: userData[colBlockedUsers] is List ? jsonEncode(userData[colBlockedUsers]) : userData[colBlockedUsers],
       },
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
@@ -434,15 +360,9 @@ class DatabaseHelper {
   Future<String?> getLocalPathForMessage(String messageId) async {
     final db = await database;
     final List<Map<String, dynamic>> maps = await db.query(
-      tableMessages,
-      columns: [columnLocalPath], 
-      where: '$columnId = ?',
-      whereArgs: [messageId],
-      limit: 1,
+      tableMessages, columns: [columnLocalPath], where: '$columnId = ?', whereArgs: [messageId], limit: 1,
     );
-    if (maps.isNotEmpty) {
-      return maps.first[columnLocalPath] as String?;
-    }
+    if (maps.isNotEmpty) { return maps.first[columnLocalPath] as String?; }
     return null;
   }
 

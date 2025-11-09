@@ -13,7 +13,6 @@ dependencies:
   animations: ^2.0.11
   async: ^2.13.0
   
-  # <<< DORE PAKI NSHYA TWONGEYEMO >>>
   cached_network_image: ^3.4.0 
   
   cached_video_player_plus: ^4.0.4
@@ -21,6 +20,10 @@ dependencies:
   chewie: ^1.7.5
 
   cloud_firestore: ^6.0.0
+  
+  # <<< DORE IMPINDUKA. TWASHIZEMO VERSION NSHASHA >>>
+  firebase_database: ^12.0.3
+
   connectivity_plus: ^6.0.3
   country_code_picker: ^3.0.0
   cupertino_icons: ^1.0.6
@@ -39,7 +42,6 @@ dependencies:
   font_awesome_flutter: ^10.7.0
   http: ^1.2.1
 
-  # <<< DORE INDI PAKI NSHYA TWONGEYEMO >>>
   image: ^4.2.0
   
   image_editor_plus: any
