@@ -1,0 +1,9 @@
+[{
+  "relation": ["delegate_permission/common.handle_all_urls"],
+  "target": {
+    "namespace": "android_app",
+    "package_name": "com.example.jembe_talk",
+    "sha256_cert_fingerprints":
+    ["FC:6E:38:87:1F:25:67:CE:B0:26:C2:71:73:03:0F:48:39:46:6E:C5:D9:37:DB:F6:95:3E:6E:5C:3F:18:D5:FC"]
+  }
+}]
