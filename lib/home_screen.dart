@@ -1,90 +1,40 @@
-// lib/home_screen.dart (VERSION 17.3: FINAL & CLEAN)
+// lib/home_screen.dart (VERSION 29.9 - FIXED NOTIFICATION SOUND FOR NEW SYNC LOGIC)
 
-import 'package:jembe_talk/services/firebase_service.dart';
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
-import 'dart:ui';
-import 'package:animations/animations.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_database/firebase_database.dart';
-import 'package:flutter/foundation.dart';
+import 'dart:developer';
 import 'package:flutter/material.dart';
-import 'package:flutter_staggered_animations/flutter_staggered_animations.dart';
+import 'package:flutter/services.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_messaging/firebase_messaging.dart'; 
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:jembe_talk/loading_screen.dart';
-import 'package:jembe_talk/network_video_player.dart';
-import 'package:jembe_talk/services/database_helper.dart';
-import 'package:jembe_talk/services/message_status_service.dart';
-import 'package:jembe_talk/services/presence_service.dart';
+import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_app_badger/flutter_app_badger.dart';
+import 'package:flutter_contacts/flutter_contacts.dart';
+import 'package:phone_numbers_parser/phone_numbers_parser.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
+
+// --- MODELS & TABS ---
+import 'package:jembe_talk/models/home_models.dart';
+import 'package:jembe_talk/tabs/chats_tab.dart';
+import 'package:jembe_talk/tabs/contacts_tab.dart';
+import 'package:jembe_talk/tabs/tv_tab.dart';
+
+// --- SCREENS & SERVICES ---
+import 'package:jembe_talk/settings_screen.dart';
 import 'package:jembe_talk/star_day_screen.dart';
 import 'package:jembe_talk/tangaza_star/tangaza_star_screen.dart';
 import 'package:jembe_talk/unified_notifications_screen.dart';
-import 'package:jembe_talk/video_player_screen.dart'; 
 import 'package:jembe_talk/welcome_screen.dart';
-import 'package:liquid_pull_to_refresh/liquid_pull_to_refresh.dart';
-import 'package:permission_handler/permission_handler.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'package:jembe_talk/chat_screen.dart';
-import 'package:jembe_talk/contact_info_screen.dart';
-import 'package:jembe_talk/settings_screen.dart';
-import 'package:flutter_contacts/flutter_contacts.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:path/path.dart' as path;
-import 'package:http/http.dart' as http;
-import 'package:provider/provider.dart'; 
-import 'package:jembe_talk/language_provider.dart'; 
-import 'package:intl/intl.dart'; 
-import 'package:intl/date_symbol_data_local.dart'; 
-
-class TabItem {
-  final String id;
-  final String label;
-  final IconData icon;
-  final Widget screen;
-  TabItem({required this.id, required this.label, required this.icon, required this.screen});
-}
-
-class _ChatData {
-  final String userId;
-  final String displayName;
-  final String? photoUrl;
-  final String? localPhotoPath; 
-  final String? phoneNumber;
-  final int lastMessageTimestamp;
-  final List<dynamic> blockedUsers;
-  
-  final String? lastMessageContent;
-  final String? lastMessageType;
-  final String? lastMessageStatus;
-  final String? lastMessageSenderId;
-
-  _ChatData({
-    required this.userId, 
-    required this.displayName, 
-    this.photoUrl, 
-    this.localPhotoPath, 
-    this.phoneNumber, 
-    required this.lastMessageTimestamp,
-    this.blockedUsers = const [],
-    this.lastMessageContent,
-    this.lastMessageType,
-    this.lastMessageStatus,
-    this.lastMessageSenderId,
-  });
-
-  Map<String, dynamic> toJson() => {
-    'userId': userId,
-    'displayName': displayName,
-    'photoUrl': photoUrl,
-    'localPhotoPath': localPhotoPath,
-    'phoneNumber': phoneNumber,
-    'lastMessageTimestamp': lastMessageTimestamp,
-    'blockedUsers': blockedUsers,
-  };
-}
+import 'package:jembe_talk/profile_setup_screen.dart';
+import 'package:jembe_talk/language_provider.dart';
+import 'package:jembe_talk/services/database_helper.dart';
+import 'package:jembe_talk/services/chat_repository.dart';
+import 'package:jembe_talk/services/sync_service.dart';
+import 'package:jembe_talk/services/audio_service.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -92,1466 +42,352 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver, SingleTickerProviderStateMixin {
+class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   late PageController _pageController;
   int _currentIndex = 0;
-
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final DatabaseHelper _dbHelper = DatabaseHelper.instance;
+  final ChatRepository _chatRepository = ChatRepository(); 
+
+  final AudioPlayerService _notifPlayer = AudioPlayerService();
+
   String? _backgroundImagePath;
-
-  final ValueNotifier<List<_ChatData>> _chatsNotifier = ValueNotifier<List<_ChatData>>([]);
-  final ValueNotifier<List<_ChatData>> _contactsNotifier = ValueNotifier<List<_ChatData>>([]);
-
+  final ValueNotifier<List<ChatData>> _chatsNotifier = ValueNotifier<List<ChatData>>([]);
+  final ValueNotifier<List<ChatData>> _contactsNotifier = ValueNotifier<List<ChatData>>([]);
+  
   bool _isSearching = false;
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = "";
+  
+  final StreamController<int> _unreadChatsCountController = StreamController<int>.broadcast();
   Stream<int>? _totalUnreadCountStream;
-  StreamSubscription? _userChangesSubscription;
-  Stream<int>? _totalUnreadChatsCountStream;
-  
-  StreamSubscription? _allMessagesSubscription;
-  StreamSubscription? _myBlockedUsersSubscription;
-
-  late AnimationController _loveStarController;
-  late Animation<double> _loveStarAnimation;
-
+  StreamSubscription? _userChangesSubscription, _syncServiceSubscription, _connectivitySub, _broadcastSubscription; 
   Stream<bool>? _hasUnreadStarNotificationStream;
-
-  List<String> _tabOrder = [];
-  final List<String> _defaultTabOrder = ['chats', 'contacts', 'tv', 'settings'];
   
+  final List<String> _tabOrder = const ['chats', 'contacts', 'tv', 'settings'];
   List<dynamic> _myBlockedUsers = [];
-
-  final PresenceService _presenceService = PresenceService();
-
-  Future<void>? _initializationFuture;
-
-  final String _adminSystemId = 'jembe_talk_official_admin';
+  double _dockBottom = 45.0; 
 
   @override
   void initState() {
     super.initState();
-    _initializationFuture = _initializeApp();
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    _pageController = PageController(initialPage: _currentIndex);
+    
+    _searchController.addListener(() { if (mounted) setState(() => _searchQuery = _searchController.text); });
+
+    _initialWhatsAppStart();
     WidgetsBinding.instance.addObserver(this);
   }
 
-  Future<void> _initializeApp() async {
-    FirebaseService().saveUserFcmToken();
-    await initializeDateFormatting();
+  void _initialWhatsAppStart() async {
+    await _loadWallpaper();
+    await _loadDataFromLocalDb(); 
+    _startBackgroundServices();
+    _checkProfileIntegrity();
 
-    _pageController = PageController(initialPage: _currentIndex);
-    
-    _presenceService.initialize();
-    
-    await _loadInitialData();
-    
-    _listenForUserChanges();
-    
-    final currentUser = _auth.currentUser;
-    if (currentUser != null) {
-      MessageStatusService.instance.initialize(currentUser.uid);
-      _listenToMyBlockedUsers(); 
-      _checkForGlobalBroadcasts();
-    }
-
-    _listenForAllMessageChanges();
-    _initializeTotalUnreadStream();
-    _initializeTotalUnreadChatsStream();
-    _searchController.addListener(() { if (mounted) setState(() => _searchQuery = _searchController.text); });
-    _loveStarController = AnimationController(duration: const Duration(milliseconds: 7500), vsync: this)..repeat(reverse: true);
-    _loveStarAnimation = Tween<double>(begin: 1.0, end: 1.15).animate(CurvedAnimation(parent: _loveStarController, curve: Curves.easeInOut));
-    _initializeStarNotificationStream();
+    // Auto-sync contacts app ikifunguka
+    Future.delayed(const Duration(seconds: 2), () => _handleManualSync());
   }
 
-  Future<void> _checkForGlobalBroadcasts() async {
-    final currentUser = _auth.currentUser;
-    if (currentUser == null) return;
+  void _startBackgroundServices() {
+    final user = _auth.currentUser;
+    if (user == null) return;
 
-    try {
-      final docSnapshot = await _firestore.collection('global_broadcasts').doc('latest').get();
-      
-      if (docSnapshot.exists && docSnapshot.data() != null) {
-        final data = docSnapshot.data()!;
-        final String broadcastId = data['id']; 
-        final String message = data['message'];
-        final Timestamp timestamp = data['timestamp'];
+    _syncServiceSubscription?.cancel();
+    _broadcastSubscription?.cancel();
+    _userChangesSubscription?.cancel();
 
-        final existingMessage = await _dbHelper.getMessageById(broadcastId);
+    _listenToMyBlockedUsers(); 
+    syncService.start(); 
+    _listenForUserChanges(); 
+    _initializeTotalUnreadStream();
+    _initializeStarNotificationStream();
+    _setupSyncListener(); 
+    _listenForGlobalBroadcasts();
+    _updateFCMToken(); 
+    _updateUnreadCount(); 
 
-        if (existingMessage == null) {
-          List<String> ids = [currentUser.uid, _adminSystemId];
-          ids.sort();
-          String chatRoomID = ids.join('_');
+    FirebaseMessaging.instance.subscribeToTopic("all_users");
+    FlutterAppBadger.isAppBadgeSupported().then((sup) { if (sup) FlutterAppBadger.removeBadge(); });
+  }
 
-          final localMessage = {
-            'id': broadcastId,
-            'chatRoomID': chatRoomID,
-            'senderID': _adminSystemId, 
-            'receiverID': currentUser.uid,
-            'message': message,
-            'messageType': 'text',
-            'timestamp': timestamp.millisecondsSinceEpoch,
-            'status': 'sent',
-          };
+  void _setupSyncListener() {
+    _syncServiceSubscription = syncService.uiMessageUpdateStream.listen((event) async { 
+      if (!mounted) return;
+      await _loadDataFromLocalDb();
+      _updateUnreadCount();
 
-          await _dbHelper.saveMessage(localMessage);
-          
-          if (mounted) {
-            await _loadDataFromLocalDb();
-          }
+      // ✅ KOSORA HANO: Reba niba event itangiye na "message_received" (kuko ubu ifite na Room ID)
+      if (event.startsWith("message_received")) {
+        // Kina ijwi niba GUSA nta Chat ifunguye (uri kuri Home)
+        if (syncService.currentActiveChatId == null) {
+          _notifPlayer.playNotificationSound('assets/audio/incoming_sound.mp3');
         }
       }
-    } catch (e) {
-      debugPrint("Ikosa ryo kureba Broadcasts: $e");
-    }
+    });
   }
 
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    super.didChangeAppLifecycleState(state);
-    if (state == AppLifecycleState.resumed) {
-      _presenceService.goOnline();
-      _checkForGlobalBroadcasts();
-    } else if (state == AppLifecycleState.paused || state == AppLifecycleState.inactive || state == AppLifecycleState.detached) {
-      _presenceService.goOffline();
+  Future<void> _updateUnreadCount() async {
+    final user = _auth.currentUser;
+    if (user == null) return;
+    final count = await _dbHelper.getTotalUnreadCount(user.uid);
+    if (!_unreadChatsCountController.isClosed) _unreadChatsCountController.add(count);
+  }
+
+  void _updateFCMToken() async {
+    final user = _auth.currentUser;
+    if (user == null) return;
+    try {
+      String? token = await FirebaseMessaging.instance.getToken();
+      if (token != null) {
+        await _firestore.collection('users').doc(user.uid).set({
+          'fcmToken': token,
+          'lastUpdated': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+      }
+    } catch (_) {}
+  }
+
+  void _listenForGlobalBroadcasts() {
+    _broadcastSubscription = _firestore.collection('global_broadcasts').doc('latest').snapshots().listen((snapshot) {
+      if (snapshot.exists && mounted) _loadDataFromLocalDb();
+    });
+  }
+
+  void _listenForUserChanges() {
+    final user = _auth.currentUser;
+    if (user == null) return;
+    _userChangesSubscription = _firestore.collection('users').doc(user.uid).snapshots().listen((snapshot) async {
+      if (snapshot.exists && mounted) {
+        final data = Map<String, dynamic>.from(snapshot.data()!);
+        data['id'] = user.uid;
+        await _dbHelper.saveJembeContact(data);
+      }
+    });
+  }
+
+  Future<void> _loadDataFromLocalDb() async {
+    final currentUser = _auth.currentUser; 
+    if (currentUser == null) return;
+    try {
+      final recent = await _chatRepository.getAllRecentChats(currentUser.uid);
+      final matchedContacts = await _chatRepository.getAllMatchedContacts(currentUser.uid);
+      if (mounted) {
+        _chatsNotifier.value = List<ChatData>.from(recent);
+        _contactsNotifier.value = List<ChatData>.from(matchedContacts);
+      }
+    } catch (e) { log("Error loading DB: $e"); }
+  }
+
+  Future<void> _handleManualSync() async {
+    if (await FlutterContacts.requestPermission()) {
+      final phoneContacts = await FlutterContacts.getContacts(withProperties: true);
+      final Map<String, String> localContactsMap = {};
+      for (var contact in phoneContacts) {
+        for (var phone in contact.phones) {
+          String cleanNum = phone.number.replaceAll(RegExp(r'\s+'), '');
+          if (cleanNum.isNotEmpty) localContactsMap[cleanNum] = contact.displayName;
+        }
+      }
+      if (localContactsMap.isNotEmpty) {
+        await _chatRepository.warmUpMatchedContacts(localContactsMap);
+        await _loadDataFromLocalDb();
+      }
     }
   }
 
   void _listenToMyBlockedUsers() {
-    final currentUser = _auth.currentUser;
-    if (currentUser == null) return;
-    _myBlockedUsersSubscription?.cancel();
-    _myBlockedUsersSubscription = _firestore.collection('users').doc(currentUser.uid).snapshots().listen((snapshot) {
-      if (snapshot.exists && mounted) {
-        final userData = snapshot.data();
-        setState(() {
-          _myBlockedUsers = userData?['blockedUsers'] as List<dynamic>? ?? [];
-        });
-      }
+    final currentUser = _auth.currentUser; if (currentUser == null) return;
+    _firestore.collection('users').doc(currentUser.uid).snapshots().listen((snapshot) {
+      if (snapshot.exists && mounted) setState(() { _myBlockedUsers = snapshot.data()?['blockedUsers'] as List? ?? []; });
     });
-  }
-  
-  Future<void> _loadInitialData() async {
-    await _loadTabOrder();
-    await _loadWallpaper();
-    await _loadDataFromLocalDb();
-    _syncAndLoadData();
-  }
-  
-  Future<void> _loadDataFromLocalDb() async {
-    final currentUser = _auth.currentUser;
-    if (currentUser == null) return;
-    
-    final contactMapsFromDb = await _dbHelper.getJembeContacts();
-    final phoneContactsMap = await _getPhoneContactsMap();
-    
-    List<_ChatData> chatsFromDb = [];
-    List<_ChatData> contactsFromDb = [];
-    
-    bool adminFound = false;
-
-    for (var map in contactMapsFromDb) {
-      if (map['userId'] == _adminSystemId) adminFound = true;
-
-      if (map['userId'] != currentUser.uid) {
-        String phoneNumber = map['phoneNumber'] ?? '';
-        String normalizedPhoneNumber = _normalizePhoneNumber(phoneNumber);
-        String displayNameToShow = phoneContactsMap[normalizedPhoneNumber] ?? map['displayName'] ?? phoneNumber;
-        
-        List<String> ids = [currentUser.uid, map['userId']];
-        ids.sort();
-        String chatRoomID = ids.join('_');
-        
-        final lastMessage = await _dbHelper.getLastMessage(chatRoomID);
-        final lastMessageTimestamp = lastMessage?['timestamp'] as int? ?? 0;
-        
-        final blockedUsersJson = map['blockedUsers'];
-        final blockedUsersList = (blockedUsersJson is String && blockedUsersJson.isNotEmpty) 
-            ? jsonDecode(blockedUsersJson) 
-            : [];
-        
-        final chatData = _ChatData(
-          userId: map['userId'],
-          displayName: displayNameToShow,
-          photoUrl: map['photoUrl'],
-          localPhotoPath: map['localPhotoPath'],
-          phoneNumber: phoneNumber,
-          lastMessageTimestamp: lastMessageTimestamp,
-          blockedUsers: blockedUsersList,
-          lastMessageContent: lastMessage?['message'],
-          lastMessageType: lastMessage?['messageType'],
-          lastMessageStatus: lastMessage?['status'],
-          lastMessageSenderId: lastMessage?['senderID'],
-        );
-
-        if (lastMessageTimestamp > 0) {
-            chatsFromDb.add(chatData);
-        }
-        
-        if (phoneContactsMap.containsKey(normalizedPhoneNumber)) {
-          contactsFromDb.add(chatData);
-        }
-      }
-    }
-
-    if (!adminFound) {
-       List<String> ids = [currentUser.uid, _adminSystemId];
-       ids.sort();
-       String chatRoomID = ids.join('_');
-       final lastMessage = await _dbHelper.getLastMessage(chatRoomID);
-       if (lastMessage != null) {
-         final adminChatData = _ChatData(
-           userId: _adminSystemId, 
-           displayName: "Jembe Talk", 
-           photoUrl: null, 
-           lastMessageTimestamp: lastMessage['timestamp'] as int,
-           lastMessageContent: lastMessage['message'],
-           lastMessageType: lastMessage['messageType'],
-           lastMessageStatus: lastMessage['status'],
-           lastMessageSenderId: lastMessage['senderID'],
-         );
-         chatsFromDb.add(adminChatData);
-       }
-    }
-    
-    chatsFromDb.sort((a, b) => b.lastMessageTimestamp.compareTo(a.lastMessageTimestamp));
-    
-    if (mounted) {
-      _chatsNotifier.value = chatsFromDb;
-      _contactsNotifier.value = contactsFromDb;
-    }
-  }
-
-  Future<void> _refreshData() async {
-    await _syncAndLoadData();
-  }
-  
-  Future<void> _syncAndLoadData() async { 
-    await _syncUsersFromFirebase(); 
-    await _loadDataFromLocalDb();
-  }
-
-  void _listenForAllMessageChanges() {
-    final currentUser = _auth.currentUser;
-    if (currentUser == null) return;
-
-    _allMessagesSubscription?.cancel();
-    _allMessagesSubscription = _firestore
-        .collectionGroup('messages')
-        .where(Filter.or(
-          Filter('receiverID', isEqualTo: currentUser.uid),
-          Filter('senderID', isEqualTo: currentUser.uid),
-        ))
-        .snapshots()
-        .listen((snapshot) async {
-      if (snapshot.docChanges.isEmpty || !mounted) return;
-      bool needsRefresh = false;
-
-      for (var change in snapshot.docChanges) {
-        if (change.type == DocumentChangeType.added || change.type == DocumentChangeType.modified) {
-          final messageDoc = change.doc;
-          final messageData = messageDoc.data();
-          if (messageData != null) {
-            final localMessage = Map<String, dynamic>.from(messageData);
-            localMessage['id'] = messageDoc.id;
-            if (messageDoc.reference.parent.parent != null) {
-              localMessage['chatRoomID'] = messageDoc.reference.parent.parent!.id;
-            } else { continue; }
-            if (messageData['timestamp'] is Timestamp) {
-              localMessage['timestamp'] = (messageData['timestamp'] as Timestamp).millisecondsSinceEpoch;
-            }
-            await _dbHelper.saveMessage(localMessage);
-            needsRefresh = true;
-          }
-        }
-      }
-
-      if (needsRefresh && mounted) {
-        await _loadDataFromLocalDb();
-      }
-    });
-  }
-
-  @override
-  void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
-    _pageController.dispose();
-    _searchController.dispose();
-    _userChangesSubscription?.cancel();
-    _allMessagesSubscription?.cancel();
-    _myBlockedUsersSubscription?.cancel();
-    _loveStarController.dispose();
-    _chatsNotifier.dispose();
-    _contactsNotifier.dispose();
-    super.dispose();
-  }
-
-  void _goToPage(int index) {
-    if (index == _currentIndex) return;
-    if (_isSearching) { 
-      setState(() { 
-        _isSearching = false; 
-        _searchController.clear(); 
-      }); 
-    }
-    _pageController.animateToPage(
-      index,
-      duration: const Duration(milliseconds: 1000),
-      curve: Curves.easeInOut,
-    );
-  }
-
-  void _initializeTotalUnreadChatsStream() {
-    final currentUser = _auth.currentUser;
-    if (currentUser == null) return;
-    final stream = _firestore.collectionGroup('messages').where('receiverID', isEqualTo: currentUser.uid).where('status', isNotEqualTo: 'seen').snapshots().map((snapshot) {
-      final chatRoomIDs = <String>{};
-      for (var doc in snapshot.docs) { final parent = doc.reference.parent.parent; if (parent != null) { chatRoomIDs.add(parent.id); } }
-      return chatRoomIDs.length;
-    });
-    if (mounted) { setState(() => _totalUnreadChatsCountStream = stream); }
-  }
-
-  void _listenForUserChanges() {
-    final currentUser = _auth.currentUser;
-    if (currentUser == null) return;
-    _userChangesSubscription = _firestore.collection('users').snapshots().listen((snapshot) async {
-      bool needsRefresh = false;
-      for (var docChange in snapshot.docChanges) {
-        if (docChange.type == DocumentChangeType.added || docChange.type == DocumentChangeType.modified) {
-          final userData = docChange.doc.data();
-          if (userData != null) { 
-            final dataToSave = Map<String, dynamic>.from(userData);
-            dataToSave['id'] = docChange.doc.id; 
-            
-            await _cacheProfilePhotoIfNeeded(dataToSave);
-            
-            if (dataToSave['blockedUsers'] is List) {
-              dataToSave['blockedUsers'] = jsonEncode(dataToSave['blockedUsers']);
-            }
-            await _dbHelper.saveJembeContact(dataToSave); 
-            needsRefresh = true; 
-          }
-        }
-      }
-      if (needsRefresh && mounted) { await _syncAndLoadData(); }
-    });
-  }
-
-  Future<Map<String, String>> _getPhoneContactsMap() async {
-    Map<String, String> phoneContactsMap = {};
-    PermissionStatus status = await Permission.contacts.status;
-    if (status.isDenied) {
-      status = await Permission.contacts.request();
-    }
-    if (status.isGranted) {
-      try {
-        List<Contact> contacts = await FlutterContacts.getContacts(withProperties: true);
-        for (var contact in contacts) {
-          for (var phone in contact.phones) {
-            if (phone.number.isNotEmpty) {
-              String normalizedPhone = _normalizePhoneNumber(phone.number);
-              if (!phoneContactsMap.containsKey(normalizedPhone)) {
-                phoneContactsMap[normalizedPhone] = contact.displayName;
-              }
-            }
-          }
-        }
-      } catch (e) {
-        debugPrint("Ikosa ryo gusoma contacts: $e");
-      }
-    } else {
-      debugPrint("Umukoresha ntiyemeye ko porogaramu isoma contacts ze.");
-    }
-    return phoneContactsMap;
-  }
-  
-  String _normalizePhoneNumber(String phone) {
-    String digitsOnly = phone.replaceAll(RegExp(r'[^\d]'), '');
-    if (digitsOnly.length >= 8) {
-        String potentialNumber = digitsOnly.substring(digitsOnly.length - 8);
-        if (potentialNumber.startsWith('6') || potentialNumber.startsWith('7')) {
-            return '+257$potentialNumber';
-        }
-    }
-    if (phone.trim().startsWith('+')) {
-        return phone.replaceAll(RegExp(r'[\s-()]'), '');
-    }
-    return digitsOnly;
   }
 
   void _initializeTotalUnreadStream() {
-    final currentUser = _auth.currentUser;
-    if (currentUser == null) { if (mounted) { setState(() => _totalUnreadCountStream = Stream.value(0)); } return; }
-    final announcementsStream = _firestore.collection('announcements').orderBy('createdAt', descending: true).limit(50).snapshots().asyncMap((snapshot) async {
+    _totalUnreadCountStream = _firestore.collection('announcements').orderBy('createdAt', descending: true).limit(50).snapshots().asyncMap((snapshot) async {
       final prefs = await SharedPreferences.getInstance();
-      final lastReadMillis = prefs.getInt('lastReadAnnouncementTimestamp') ?? 0;
-      final lastReadTimestamp = Timestamp.fromMillisecondsSinceEpoch(lastReadMillis);
-      return snapshot.docs.where((doc) { final createdAt = doc.data()['createdAt'] as Timestamp?; return createdAt != null && createdAt.compareTo(lastReadTimestamp) > 0; }).length;
+      final last = prefs.getInt('lastReadAnnouncementTimestamp') ?? 0;
+      return snapshot.docs.where((doc) { 
+        final t = doc.data()['createdAt'] as Timestamp?; 
+        return t != null && t.millisecondsSinceEpoch > last; 
+      }).length;
     });
-    if (mounted) { setState(() => _totalUnreadCountStream = announcementsStream); }
-  }
-
-  Future<void> _onNotificationsPressed() async { Navigator.push(context, PageRouteBuilder(transitionDuration: const Duration(milliseconds: 1000), pageBuilder: (context, animation, secondaryAnimation) => const UnifiedNotificationsScreen(), transitionsBuilder: (context, animation, secondaryAnimation, child) { return FadeThroughTransition(animation: animation, secondaryAnimation: secondaryAnimation, child: child); })).then((_) => _initializeTotalUnreadStream()); }
-  
-  AppBar _buildSearchAppBar(BuildContext context) { 
-    final theme = Theme.of(context); 
-    final lang = Provider.of<LanguageProvider>(context); 
-    return AppBar(
-      backgroundColor: theme.appBarTheme.backgroundColor?.withAlpha(230), 
-      elevation: 0, 
-      leading: IconButton(
-        icon: const Icon(Icons.close), 
-        onPressed: () => setState(() { _isSearching = false; _searchController.clear(); })
-      ), 
-      title: TextField(
-        controller: _searchController, 
-        autofocus: true, 
-        decoration: InputDecoration(hintText: lang.t('search'), border: InputBorder.none), 
-        style: TextStyle(fontSize: 18, color: theme.textTheme.bodyLarge?.color)
-      )
-    ); 
-  }
-
-  String _getDisplayDay(String langCode) {
-    final now = DateTime.now();
-    if (langCode == 'ki') {
-      switch (now.weekday) {
-        case DateTime.monday: return "Kuwambere";
-        case DateTime.tuesday: return "Kuwakabiri";
-        case DateTime.wednesday: return "Kuwagatatu";
-        case DateTime.thursday: return "Kuwakane";
-        case DateTime.friday: return "Kuwagatanu";
-        case DateTime.saturday: return "Kuwagatandatu";
-        case DateTime.sunday: return "Kuwamungu";
-        default: return "";
-      }
-    } else {
-      try {
-        return DateFormat('EEEE', langCode).format(now);
-      } catch (e) {
-        return DateFormat('EEEE').format(now);
-      }
-    }
-  }
-  
-  Future<void> _saveTabOrder(List<String> order) async { final prefs = await SharedPreferences.getInstance(); await prefs.setStringList('tabOrder', order); }
-  
-  Future<void> _loadTabOrder() async {
-    final prefs = await SharedPreferences.getInstance();
-    List<String>? savedOrder = prefs.getStringList('tabOrder');
-    if (savedOrder == null || savedOrder.isEmpty) { 
-      _tabOrder = List.from(_defaultTabOrder); 
-    } else {
-      _tabOrder = savedOrder;
-      for (var id in _defaultTabOrder) { if (!_tabOrder.contains(id)) { _tabOrder.add(id); } }
-    }
   }
 
   void _initializeStarNotificationStream() {
-    final currentUser = _auth.currentUser;
-    if (currentUser == null) return;
-    final now = DateTime.now();
-    const announcementHour = 18;
-    final todayAnnouncementTime = DateTime(now.year, now.month, now.day, announcementHour);
-    DateTime lastAnnouncementTime;
-    if (now.isBefore(todayAnnouncementTime)) { lastAnnouncementTime = todayAnnouncementTime.subtract(const Duration(days: 1)); } else { lastAnnouncementTime = todayAnnouncementTime; }
-    final lastAnnouncementFirebaseTimestamp = Timestamp.fromDate(lastAnnouncementTime);
-    final stream = _firestore.collection('notifications').where('userId', isEqualTo: currentUser.uid).where('type', isEqualTo: 'star_winner').where('isRead', isEqualTo: false).where('timestamp', isGreaterThanOrEqualTo: lastAnnouncementFirebaseTimestamp).limit(1).snapshots().map((snapshot) => snapshot.docs.isNotEmpty);
-    if (mounted) { setState(() { _hasUnreadStarNotificationStream = stream; }); }
-  }
-
-  void _navigateToDayScreen() async {
-    final String? currentUserId = _auth.currentUser?.uid;
-    if (currentUserId == null) return;
-    if (!mounted) return;
-    final result = await Navigator.push(context, MaterialPageRoute(builder: (context) => StarDayScreen(userId: currentUserId)));
-    if (result is String && result.isNotEmpty) { final String postId = result; _navigateToTangazaStar(targetPostId: postId); }
-    _markStarNotificationsAsRead(currentUserId);
-  }
-
-  Future<void> _markStarNotificationsAsRead(String userId) async {
-    final querySnapshot = await _firestore.collection('notifications').where('userId', isEqualTo: userId).where('type', isEqualTo: 'star_winner').where('isRead', isEqualTo: false).get();
-    final batch = _firestore.batch();
-    for (var doc in querySnapshot.docs) { batch.update(doc.reference, {'isRead': true}); }
-    await batch.commit();
-  }
-
-  void _navigateToTangazaStar({String? targetPostId}) { Navigator.push(context, PageRouteBuilder(transitionDuration: const Duration(milliseconds: 1000), pageBuilder: (context, animation, secondaryAnimation) => TangazaStarScreen(targetPostId: targetPostId), transitionsBuilder: (context, animation, secondaryAnimation, child) { return SharedAxisTransition(animation: animation, secondaryAnimation: secondaryAnimation, transitionType: SharedAxisTransitionType.scaled, child: child); })); }
-
-  PreferredSizeWidget _buildCustomAppBar(BuildContext context) {
-    final theme = Theme.of(context);
-    final topPadding = MediaQuery.of(context).padding.top;
-    final lang = Provider.of<LanguageProvider>(context);
-
-    const double appBarHeight = kToolbarHeight;
-    const double bottomSectionHeight = 56.0;
-    const double totalHeight = appBarHeight + bottomSectionHeight;
-    return PreferredSize(preferredSize: const Size.fromHeight(totalHeight), child: ClipRect(child: BackdropFilter(filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10), child: Container(color: theme.appBarTheme.backgroundColor?.withAlpha(200), child: Padding(padding: EdgeInsets.only(top: topPadding), child: Column(children: [ SizedBox(height: appBarHeight, child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [ const SizedBox(width: 56), Row(mainAxisSize: MainAxisSize.min, children: [ Text("Jembe Talk", style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: theme.textTheme.bodyLarge?.color)), const SizedBox(width: 8), StreamBuilder<int>(stream: _totalUnreadCountStream, builder: (context, snapshot) { return Badge(isLabelVisible: (snapshot.data ?? 0) > 0, label: Text((snapshot.data ?? 0).toString()), child: Material(color: Colors.transparent, child: InkWell(onTap: _onNotificationsPressed, borderRadius: BorderRadius.circular(30), child: Padding(padding: const EdgeInsets.all(6.0), child: Icon(Icons.notifications_none, size: 28, color: theme.iconTheme.color))))); })]), IconButton(padding: const EdgeInsets.only(right: 8.0), icon: const Icon(Icons.more_vert), onPressed: () => _showMainMenu(context))])), SizedBox(height: bottomSectionHeight, child: Padding(padding: const EdgeInsets.fromLTRB(8.0, 0, 8.0, 8.0), child: Row(children: [ Expanded(flex: 1, child: StreamBuilder<bool>(stream: _hasUnreadStarNotificationStream, builder: (context, snapshot) { final bool isWinner = snapshot.data ?? false; return ScaleTransition(scale: _loveStarAnimation, child: InkWell(onTap: _navigateToDayScreen, borderRadius: const BorderRadius.only(topRight: Radius.circular(24), bottomLeft: Radius.circular(24), topLeft: Radius.circular(8), bottomRight: Radius.circular(8)), child: Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6), decoration: BoxDecoration(color: theme.colorScheme.surface.withAlpha(50), borderRadius: const BorderRadius.only(topRight: Radius.circular(24), bottomLeft: Radius.circular(24), topLeft: Radius.circular(8), bottomRight: Radius.circular(8)), border: Border.all(color: theme.colorScheme.secondary.withAlpha(150), width: 1.5)), child: Center(child: isWinner ? Row(mainAxisAlignment: MainAxisAlignment.center, children: [ Text(lang.t('winner'), style: TextStyle(color: Colors.pinkAccent.shade100, fontSize: 13.0, fontWeight: FontWeight.bold, letterSpacing: 1.2)), const SizedBox(width: 5), const FaIcon(FontAwesomeIcons.solidStar, color: Colors.amber, size: 15)]) : Row(mainAxisAlignment: MainAxisAlignment.center, children: [ 
-        Text(_getDisplayDay(lang.currentLanguage), style: TextStyle(color: theme.textTheme.bodyLarge?.color, fontSize: 12.0, fontWeight: FontWeight.bold)), 
-        const SizedBox(width: 6), FaIcon(FontAwesomeIcons.solidCalendarDays, color: Colors.amber, size: 18)]))))); })), const SizedBox(width: 8), Expanded(flex: 1, child: ScaleTransition(scale: _loveStarAnimation, child: InkWell(onTap: () => _navigateToTangazaStar(targetPostId: null), borderRadius: const BorderRadius.only(topLeft: Radius.circular(24), bottomRight: Radius.circular(24), topRight: Radius.circular(8), bottomLeft: Radius.circular(8)), child: Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6), decoration: BoxDecoration(color: theme.colorScheme.surface.withAlpha(50), borderRadius: const BorderRadius.only(topLeft: Radius.circular(24), bottomRight: Radius.circular(24), topRight: Radius.circular(8), bottomLeft: Radius.circular(8)), border: Border.all(color: theme.colorScheme.secondary.withAlpha(150), width: 1.5)), child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [ Text("Tangaza Star", style: TextStyle(color: theme.textTheme.bodyLarge?.color, fontSize: 12.0, fontWeight: FontWeight.bold)), const SizedBox(width: 6), const FaIcon(FontAwesomeIcons.solidStar, color: Colors.amber, size: 18)]))))), IconButton(icon: const Icon(Icons.search, size: 28), onPressed: () => setState(() => _isSearching = true))])))]))))));
+    final currentUser = _auth.currentUser; if (currentUser == null) return;
+    _hasUnreadStarNotificationStream = _firestore.collection('notifications').where('userId', isEqualTo: currentUser.uid).where('type', isEqualTo: 'star_winner').where('isRead', isEqualTo: false).limit(1).snapshots().map((s) => s.docs.isNotEmpty);
   }
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final theme = Theme.of(context); 
     final lang = Provider.of<LanguageProvider>(context);
 
-    return FutureBuilder(
-      future: _initializationFuture,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return Scaffold(
-            backgroundColor: theme.scaffoldBackgroundColor,
-            body: Center(child: CircularProgressIndicator(color: theme.colorScheme.secondary)),
-          );
-        }
-
-        if (snapshot.hasError) {
-          return Scaffold(
-            backgroundColor: theme.scaffoldBackgroundColor,
-            body: Center(child: Text("${lang.t('error_unknown')} ${snapshot.error}")),
-          );
-        }
-
-        final allTabs = {
-          'chats': TabItem(id: 'chats', label: lang.t('chats'), icon: Icons.chat_bubble_outline, screen: UsersListTab(searchQuery: _searchQuery, chatsNotifier: _chatsNotifier, onRefresh: _refreshData, onChatClosed: () => _syncAndLoadData(), myBlockedUsers: _myBlockedUsers)),
-          'contacts': TabItem(
-            id: 'contacts', 
-            label: lang.t('contacts'), 
-            icon: Icons.people_outline, 
-            screen: ContactsListTab(
-              searchQuery: _searchQuery, 
-              contactsNotifier: _contactsNotifier, 
-              onRefresh: _refreshData, 
-              onChatClosed: () => _syncAndLoadData(), 
-              myBlockedUsers: _myBlockedUsers,
-            )
-          ),
-          'tv': TabItem(id: 'tv', label: lang.t('tv'), icon: Icons.tv_outlined, screen: const TVListTab()),
-          'settings': TabItem(id: 'settings', label: lang.t('settings'), icon: Icons.settings_outlined, screen: const SettingsScreen()),
-        };
-        final orderedTabs = _tabOrder.map((id) => allTabs[id]!).where((tab) => tab != null).toList();
+    final allTabs = {
+      'chats': TabItem(id: 'chats', label: lang.t('chats'), icon: Icons.chat_bubble_outline_rounded, screen: ChatsTab(searchQuery: _searchQuery, chatsNotifier: _chatsNotifier, onRefresh: _loadDataFromLocalDb, myBlockedUsers: _myBlockedUsers)),
+      'contacts': TabItem(id: 'contacts', label: lang.t('contacts'), icon: Icons.people_outline_rounded, screen: ContactsTab(searchQuery: _searchQuery, contactsNotifier: _contactsNotifier, onRefresh: _loadDataFromLocalDb)),
+      'tv': TabItem(id: 'tv', label: lang.t('tv'), icon: Icons.tv_rounded, screen: const TVTab()),
+      'settings': TabItem(id: 'settings', label: lang.t('settings'), icon: Icons.settings_rounded, screen: const SettingsScreen()),
+    };
+    final orderedTabs = _tabOrder.map((id) => allTabs[id]!).toList();
+    
+    return Scaffold(
+      extendBody: true, extendBodyBehindAppBar: true,
+      appBar: _isSearching 
+        ? AppBar(title: TextField(controller: _searchController, autofocus: true, decoration: InputDecoration(hintText: lang.t('search'))), leading: IconButton(icon: const Icon(Icons.close), onPressed: () => setState(() => _isSearching = false))) 
+        : _buildCustomAppBar(context),
+      
+      body: Stack(children: [
+        Container(color: theme.scaffoldBackgroundColor),
+        if (_backgroundImagePath != null && File(_backgroundImagePath!).existsSync()) 
+          Image.file(File(_backgroundImagePath!), height: double.infinity, width: double.infinity, fit: BoxFit.cover, color: Colors.black.withAlpha(128), colorBlendMode: BlendMode.darken),
         
-        return Scaffold(
-          extendBodyBehindAppBar: true, 
-          appBar: _isSearching ? _buildSearchAppBar(context) : _buildCustomAppBar(context), 
-          body: Stack(
-            children: [ 
-              Container(color: theme.scaffoldBackgroundColor), 
-              if (_backgroundImagePath != null && File(_backgroundImagePath!).existsSync()) 
-                Image.file(File(_backgroundImagePath!), height: double.infinity, width: double.infinity, fit: BoxFit.cover, color: Colors.black.withAlpha(128), colorBlendMode: BlendMode.darken), 
-              SafeArea(
-                child: PageView(
-                  controller: _pageController,
-                  onPageChanged: (index) {
-                    setState(() {
-                      _currentIndex = index;
-                    });
-                  },
-                  children: orderedTabs.map((tab) => tab.screen).toList(),
-                ),
-              ) 
-            ] 
-          ), 
-          bottomNavigationBar: Container(
-            height: kBottomNavigationBarHeight + MediaQuery.of(context).padding.bottom, 
-            color: theme.colorScheme.surface.withAlpha(200), 
-            child: SafeArea(
-              bottom: false, 
-              child: ReorderableListView(
-                scrollDirection: Axis.horizontal, 
-                buildDefaultDragHandles: false, 
-                onReorder: (int oldIndex, int newIndex) { 
-                  setState(() { 
-                    if (newIndex > oldIndex) { newIndex -= 1; } 
-                    final String item = _tabOrder.removeAt(oldIndex); 
-                    _tabOrder.insert(newIndex, item); 
-                    _saveTabOrder(_tabOrder); 
-                    if (_currentIndex == oldIndex) { _currentIndex = newIndex; } 
-                    else if (_currentIndex > oldIndex && _currentIndex <= newIndex) { _currentIndex--; } 
-                    else if (_currentIndex < oldIndex && _currentIndex >= newIndex) { _currentIndex++; } 
-                  }); 
-                }, 
-                proxyDecorator: (widget, index, animation) { 
-                  return AnimatedBuilder(
-                    animation: animation, 
-                    builder: (context, child) { 
-                      final double animValue = Curves.easeInOut.transform(animation.value); 
-                      final double elevation = lerpDouble(0, 8, animValue)!; 
-                      return Material(elevation: elevation, color: Colors.transparent, child: widget); 
-                    }, 
-                    child: widget
-                  ); 
-                }, 
-                children: List.generate(orderedTabs.length, (index) { 
-                  final tab = orderedTabs[index]; 
-                  final isSelected = _currentIndex == index; 
-                  return ReorderableDragStartListener(
-                    key: ValueKey(tab.id), 
-                    index: index, 
-                    child: GestureDetector(
-                      onTap: () => _goToPage(index), 
-                      child: Container(
-                        width: MediaQuery.of(context).size.width / orderedTabs.length, 
-                        padding: const EdgeInsets.symmetric(vertical: 4), 
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min, 
-                          mainAxisAlignment: MainAxisAlignment.center, 
-                          children: [ 
-                            if (tab.id == 'chats') 
-                              StreamBuilder<int>(
-                                stream: _totalUnreadChatsCountStream, 
-                                builder: (context, snapshot) { 
-                                  final count = snapshot.data ?? 0; 
-                                  return Badge(
-                                    label: Text(count.toString()), 
-                                    isLabelVisible: count > 0, 
-                                    child: Icon(tab.icon, color: isSelected ? theme.colorScheme.secondary : theme.textTheme.bodyMedium?.color)
-                                  ); 
-                                }
-                              ) 
-                            else 
-                              Icon(tab.icon, color: isSelected ? theme.colorScheme.secondary : theme.textTheme.bodyMedium?.color), 
-                            const SizedBox(height: 4), 
-                            Text(tab.label, style: TextStyle(fontSize: 12, color: isSelected ? theme.colorScheme.secondary : theme.textTheme.bodyMedium?.color))
-                          ]
-                        )
-                      )
+        PageView(
+          controller: _pageController, 
+          physics: const BouncingScrollPhysics(), 
+          onPageChanged: (i) => setState(() => _currentIndex = i), 
+          children: orderedTabs.map((t) => t.screen).toList()
+        ),
+
+        Positioned(
+          bottom: _dockBottom, left: 20, right: 20, 
+          child: GestureDetector(
+            onVerticalDragUpdate: (details) { setState(() { _dockBottom -= details.delta.dy; if (_dockBottom < 20) _dockBottom = 20; if (_dockBottom > 300) _dockBottom = 300; }); },
+            child: Container(
+              height: 68, decoration: BoxDecoration(color: Colors.black.withAlpha(225), borderRadius: BorderRadius.circular(35), border: Border.all(color: Colors.white24, width: 1.5)),
+              child: Row(
+                children: [
+                  for (int i = 0; i < orderedTabs.length; i++)
+                    Expanded(
+                      child: InkWell(
+                        onTap: () => _pageController.jumpToPage(i), 
+                        child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                          if (orderedTabs[i].id == 'chats') 
+                            StreamBuilder<int>(
+                              stream: _unreadChatsCountController.stream, 
+                              builder: (c, snap) => Badge(label: Text((snap.data ?? 0).toString()), isLabelVisible: (snap.data ?? 0) > 0, child: Icon(orderedTabs[i].icon, color: _currentIndex == i ? theme.colorScheme.secondary : Colors.white))
+                            )
+                          else 
+                            Icon(orderedTabs[i].icon, color: _currentIndex == i ? theme.colorScheme.secondary : Colors.white),
+                          Text(orderedTabs[i].label, style: const TextStyle(fontSize: 10, color: Colors.white))
+                        ]),
+                      ),
                     )
-                  ); 
-                })
-              )
-            )
-          )
-        );
-      },
+                ],
+              ),
+            ),
+          ),
+        )
+      ]),
     );
   }
 
-  Future<void> _cacheProfilePhotoIfNeeded(Map<String, dynamic> firestoreUserData) async {
-    final userId = firestoreUserData['id'];
-    final newPhotoUrl = firestoreUserData['photoUrl'] as String?;
-
-    final existingContact = await _dbHelper.getJembeContactById(userId);
-    final oldPhotoUrl = existingContact?['photoUrl'] as String?;
-    
-    if (newPhotoUrl != oldPhotoUrl) {
-      if (newPhotoUrl != null && newPhotoUrl.isNotEmpty) {
-        final localPath = await _downloadAndSaveImage(newPhotoUrl, userId);
-        firestoreUserData['localPhotoPath'] = localPath;
-      } else {
-        final oldLocalPath = existingContact?['localPhotoPath'] as String?;
-        if (oldLocalPath != null) {
-          final file = File(oldLocalPath);
-          if (await file.exists()) {
-            await file.delete();
-          }
-        }
-        firestoreUserData['localPhotoPath'] = null;
-      }
-    } else {
-       firestoreUserData['localPhotoPath'] = existingContact?['localPhotoPath'];
-    }
+  PreferredSizeWidget _buildCustomAppBar(BuildContext context) {
+    final theme = Theme.of(context); 
+    final lang = Provider.of<LanguageProvider>(context);
+    return PreferredSize(
+      preferredSize: const Size.fromHeight(120),
+      child: Container(
+        color: theme.appBarTheme.backgroundColor?.withAlpha(245), 
+        padding: EdgeInsets.only(top: MediaQuery.of(context).padding.top),
+        child: Column(children: [
+          Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+            const SizedBox(width: 50),
+            Row(children: [
+              Text("Jembe Talk", style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: theme.textTheme.bodyLarge?.color)),
+              const SizedBox(width: 8),
+              StreamBuilder<int>(stream: _totalUnreadCountStream, builder: (context, snapshot) {
+                final unreadCount = snapshot.data ?? 0;
+                return Badge(isLabelVisible: unreadCount > 0, label: Text(unreadCount.toString()), child: InkWell(onTap: () => Navigator.push(context, MaterialPageRoute(builder: (c) => const UnifiedNotificationsScreen())), child: Padding(padding: const EdgeInsets.all(6.0), child: Icon(Icons.notifications_none, size: 28, color: theme.iconTheme.color))));
+              })
+            ]),
+            IconButton(icon: const Icon(Icons.more_vert), onPressed: () => _showMainMenu(context))
+          ]),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8), 
+            child: Row(children: [
+              Expanded(
+                child: InkWell(
+                  onTap: _navigateToDayScreen, 
+                  child: Container(
+                    padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: theme.colorScheme.surface.withAlpha(140), borderRadius: BorderRadius.circular(15), border: Border.all(color: theme.colorScheme.secondary.withAlpha(76))), 
+                    child: StreamBuilder<bool>(
+                      stream: _hasUnreadStarNotificationStream, 
+                      builder: (c, snap) {
+                        final isWinner = snap.data ?? false;
+                        return FittedBox(fit: BoxFit.scaleDown, child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [Text(isWinner ? lang.t('winner').toUpperCase() : "Star Day", style: TextStyle(fontWeight: FontWeight.bold, color: isWinner ? Colors.pinkAccent : theme.textTheme.bodyLarge?.color)), const SizedBox(width: 6), const FaIcon(FontAwesomeIcons.solidStar, color: Colors.amber, size: 18)]));
+                      }
+                    )
+                  )
+                )
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: InkWell(
+                  onTap: () => Navigator.push(context, MaterialPageRoute(builder: (c) => const TangazaStarScreen())), 
+                  child: Container(
+                    padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: theme.colorScheme.surface.withAlpha(140), borderRadius: BorderRadius.circular(15), border: Border.all(color: theme.colorScheme.secondary.withAlpha(76))), 
+                    child: FittedBox(fit: BoxFit.scaleDown, child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [Text("Tangaza Star", style: TextStyle(fontWeight: FontWeight.bold, color: theme.textTheme.bodyLarge?.color)), const SizedBox(width: 6), const FaIcon(FontAwesomeIcons.solidStar, color: Colors.amber, size: 18)]))
+                  )
+                )
+              ),
+              const SizedBox(width: 4),
+              IconButton(icon: const Icon(Icons.search), onPressed: () => setState(() => _isSearching = true))
+            ]),
+          )
+        ]),
+      ),
+    );
   }
 
-  Future<String?> _downloadAndSaveImage(String url, String userId) async {
-    try {
-      final response = await http.get(Uri.parse(url));
-      if (response.statusCode == 200) {
-        final documentDirectory = await getApplicationDocumentsDirectory();
-        final fileExtension = path.extension(url).split('?').first;
-        final fileName = 'profile_$userId$fileExtension';
-        final localPath = path.join(documentDirectory.path, fileName);
-        final file = File(localPath);
-        await file.writeAsBytes(response.bodyBytes);
-        debugPrint('Ifoto ya $userId ibitswe hano: $localPath');
-        return localPath;
-      }
-    } catch (e) {
-      debugPrint("Ikosa ryo gukurura ifoto ya $userId: $e");
-    }
-    return null;
-  }
-  
-  Future<void> _syncUsersFromFirebase() async {
-    final currentUser = _auth.currentUser;
-    if (currentUser == null) return;
-    try {
-      final usersSnapshot = await _firestore.collection('users').get();
-      for (var userDoc in usersSnapshot.docs) { 
-        final userData = userDoc.data(); 
-        final dataToSave = Map<String, dynamic>.from(userData);
-        dataToSave['id'] = userDoc.id;
-        
-        await _cacheProfilePhotoIfNeeded(dataToSave);
-        
-        if (dataToSave['blockedUsers'] is List) {
-          dataToSave['blockedUsers'] = jsonEncode(dataToSave['blockedUsers']);
-        }
-        await _dbHelper.saveJembeContact(dataToSave); 
-      }
-    } catch (e) { debugPrint("Ikosa ryo guhuza amakuru y'abakoresha: $e"); }
-  }
-
-  Future<void> _logout() async {
-    MessageStatusService.instance.dispose();
-    if (!mounted) return;
-    final navigator = Navigator.of(context);
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.clear();
-    await _auth.signOut();
-    if (!mounted) return;
-    navigator.pushAndRemoveUntil(PageRouteBuilder(pageBuilder: (context, animation, secondaryAnimation) => const WelcomeScreen(), transitionsBuilder: (context, animation, secondaryAnimation, child) { return FadeTransition(opacity: animation, child: child); }, transitionDuration: const Duration(milliseconds: 1250)), (route) => false);
+  void _navigateToDayScreen() async {
+    final uid = _auth.currentUser?.uid; if (uid == null) return;
+    await Navigator.push(context, MaterialPageRoute(builder: (c) => StarDayScreen(userId: uid)));
+    final snap = await _firestore.collection('notifications').where('userId', isEqualTo: uid).where('type', isEqualTo: 'star_winner').where('isRead', isEqualTo: false).get();
+    for (var d in snap.docs) { d.reference.update({'isRead': true}); }
   }
 
   void _showMainMenu(BuildContext context) { 
     final lang = Provider.of<LanguageProvider>(context, listen: false); 
-    showMenu(
-      context: context, 
-      position: const RelativeRect.fromLTRB(100, 80, 0, 0), 
-      color: Theme.of(context).colorScheme.surface, 
-      items: [ 
-        PopupMenuItem(
-          onTap: _showAnimatedWallpaperDialog, 
-          child: ListTile(leading: const Icon(Icons.wallpaper_outlined), title: Text(lang.t('wallpaper')))
-        ), 
-        PopupMenuItem(
-          onTap: () { 
-            Future.delayed(const Duration(seconds: 0), () => Navigator.push(context, MaterialPageRoute(builder: (context) => const SettingsScreen()))); 
-          }, 
-          child: ListTile(leading: const Icon(Icons.settings_outlined), title: Text(lang.t('settings')))
-        ),
-      ]
-    ); 
-  }
-  
-  Future<void> _loadWallpaper() async { final prefs = await SharedPreferences.getInstance(); if (mounted) { setState(() => _backgroundImagePath = prefs.getString('wallpaperPath')); } }
-  
-  Future<void> _showAnimatedWallpaperDialog() async {
-    final lang = Provider.of<LanguageProvider>(context, listen: false);
-    showGeneralDialog(context: context, barrierDismissible: true, barrierLabel: '', transitionDuration: const Duration(milliseconds: 750), pageBuilder: (context, animation, secondaryAnimation) => const SizedBox(), transitionBuilder: (context, animation, secondaryAnimation, child) { return ScaleTransition(scale: CurvedAnimation(parent: animation, curve: Curves.easeOutBack), child: AlertDialog(title: Text(lang.t('wallpaper')), content: Column(mainAxisSize: MainAxisSize.min, children: [ ListTile(leading: const Icon(Icons.photo_library_outlined), title: const Text('Hindura ifoto'), onTap: () async { if (!mounted) return; Navigator.of(context).pop(); final pickedFile = await ImagePicker().pickImage(source: ImageSource.gallery); if (pickedFile != null) { final prefs = await SharedPreferences.getInstance(); await prefs.setString('wallpaperPath', pickedFile.path); if (mounted) { setState(() => _backgroundImagePath = pickedFile.path); } } }), if (_backgroundImagePath != null) ListTile(leading: const Icon(Icons.delete_outline, color: Colors.redAccent), title: const Text('Futa ifoto', style: TextStyle(color: Colors.redAccent)), onTap: () async { if (!mounted) return; Navigator.of(context).pop(); final prefs = await SharedPreferences.getInstance(); await prefs.remove('wallpaperPath'); if (mounted) { setState(() => _backgroundImagePath = null); } })]))); }); }
-}
-
-class TVListTab extends StatefulWidget {
-  const TVListTab({super.key});
-  @override
-  State<TVListTab> createState() => _TVListTabState();
-}
-
-class _TVListTabState extends State<TVListTab> {
-  bool _isTvOn = false;
-
-  // =========================================================================
-  // IYI METHOD NIYO ISIGAYE: Yohereza ID gusa, ntibara abareba
-  // =========================================================================
-  Future<void> _onItemTap(String docId, Map<String, dynamic> channelData) async {
-    final type = channelData['type'];
-    final name = channelData['name'] ?? 'Video';
-    
-    // Nta code yo kwandika muri Firebase hano.
-    // Byimuriwe muri VideoPlayerScreen na NetworkVideoPlayerScreen.
-
-    await Navigator.push(
-      context,
-      PageRouteBuilder(
-        pageBuilder: (context, animation, secondaryAnimation) => LoadingScreen(
-          channelName: name,
-          onLoadingComplete: () async {
-            if (!mounted) return;
-            if (type == 'youtube') {
-              final videoId = channelData['videoId'];
-              if (videoId != null && videoId.isNotEmpty) {
-                await Navigator.pushReplacement(context, MaterialPageRoute(
-                  builder: (context) => VideoPlayerScreen(
-                    channelId: docId, // <--- YOHEREJE DOC ID
-                    videoId: videoId, 
-                    title: name
-                  ),
-                ));
-              }
-            } else if (type == 'tv') {
-              final streamUrl = channelData['streamUrl'];
-              if (streamUrl != null && streamUrl.isNotEmpty) {
-                await Navigator.pushReplacement(context, MaterialPageRoute(
-                  builder: (context) => NetworkVideoPlayerScreen(
-                    channelId: docId, // <--- YOHEREJE DOC ID
-                    streamUrl: streamUrl, 
-                    title: name
-                  ),
-                ));
-              }
-            }
-          },
-        ),
-        transitionsBuilder: (context, animation, secondaryAnimation, child) {
-          return FadeTransition(opacity: animation, child: child);
-        },
-      ),
-    );
-  }
-
-  Widget _buildTvOffScreen(BuildContext context) {
-    return Container(
-      key: const ValueKey('tv_off'),
-      decoration: BoxDecoration(
-        color: Colors.black,
-        gradient: RadialGradient(colors: [Colors.grey[900]!, Colors.black], radius: 0.8),
-      ),
-      child: Center(child: Icon(Icons.power_settings_new, color: Colors.grey.withOpacity(0.1), size: 80)),
-    );
-  }
-  
-  Widget _buildTvOnScreen(BuildContext context) { 
-    final lang = Provider.of<LanguageProvider>(context);
-    return Container(
-      key: const ValueKey('tv_on'), 
-      color: const Color(0xFF0a0a1a),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-            child: Text(
-              "URUTONDE GWAMA TV.", 
-              style: TextStyle(color: Colors.white.withOpacity(0.9), fontSize: 18, fontWeight: FontWeight.bold, letterSpacing: 1.5),
-            ),
-          ),
-          const Divider(color: Colors.white24, height: 1),
-          Expanded(
-            child: StreamBuilder<QuerySnapshot>(
-              stream: FirebaseFirestore.instance.collection('tv_channels').orderBy('order').snapshots(),
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator(color: Colors.white));
-                }
-                if (snapshot.hasError) {
-                  return Center(child: Text("${lang.t('error_generic')} ${snapshot.error}", style: const TextStyle(color: Colors.red)));
-                }
-                if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-                  return const Center(child: Text("Nta kintu kiraboneka.", style: TextStyle(color: Colors.white70)));
-                }
-                final channels = snapshot.data!.docs;
-                return ListView.builder(
-                  itemCount: channels.length,
-                  itemBuilder: (context, index) {
-                    final channelData = channels[index].data() as Map<String, dynamic>;
-                    final docId = channels[index].id; 
-
-                    return ListTile(
-                      leading: Icon(
-                        Icons.tv_rounded,
-                        color: Colors.blue.shade200,
-                      ),
-                      title: Text(channelData['name'] ?? 'Ata zina', style: const TextStyle(color: Colors.white, fontSize: 16)),
-                      // NTA TRAILING IHARI (NTA MUBARE)
-                      onTap: () => _onItemTap(docId, channelData),
-                    );
-                  },
-                );
-              },
-            ),
-          ),
-        ],
-      )
-    ); 
-  }
-  
-  @override
-  Widget build(BuildContext context) { 
-    final theme = Theme.of(context); 
-    final lang = Provider.of<LanguageProvider>(context);
-    return Column(children: [ 
-      Expanded(
-        flex: 8, 
-        child: AspectRatio(
-          aspectRatio: 16 / 9,
-          child: Container(
-            margin: const EdgeInsets.symmetric(vertical: 8), 
-            decoration: BoxDecoration( border: Border.all(color: Colors.black38, width: 4), borderRadius: BorderRadius.zero, color: Colors.black ), 
-            child: ClipRRect(
-              borderRadius: BorderRadius.zero,
-              child: AnimatedSwitcher(
-                duration: const Duration(milliseconds: 2000), 
-                transitionBuilder: (child, animation) { return FadeTransition(opacity: animation, child: child); }, 
-                child: _isTvOn ? _buildTvOnScreen(context) : _buildTvOffScreen(context)
-              )
-            )
-          )
-        )
-      ),
-      Expanded(
-        flex: 2, 
-        child: Center(
-          child: AnimatedSwitcher(
-            duration: const Duration(milliseconds: 750), 
-            transitionBuilder: (child, animation){ return ScaleTransition(scale: animation, child: child); }, 
-            child: _isTvOn 
-              ? Padding( padding: const EdgeInsets.symmetric(horizontal: 16.0), child: Text(lang.t('select_tv'), textAlign: TextAlign.center, style: TextStyle(fontSize: 16, color: theme.textTheme.bodyMedium?.color)),) 
-              : ElevatedButton.icon(
-                  onPressed: () { setState(() { _isTvOn = true; }); }, 
-                  icon: const Icon(Icons.power_settings_new_rounded), 
-                  label: const Text("Open"), 
-                  style: ElevatedButton.styleFrom(backgroundColor: theme.colorScheme.secondary, foregroundColor: theme.colorScheme.onSecondary, padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 16), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)), textStyle: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold))
-                )
-          )
-        )
-      )
+    showMenu(context: context, position: const RelativeRect.fromLTRB(100, 80, 0, 0), items: [ 
+      PopupMenuItem(onTap: () => _showWallpaperDialog(), child: ListTile(leading: const Icon(Icons.wallpaper), title: Text(lang.t('wallpaper')))), 
+      PopupMenuItem(onTap: () => Navigator.push(context, MaterialPageRoute(builder: (c) => const SettingsScreen())), child: ListTile(leading: const Icon(Icons.settings), title: Text(lang.t('settings'))))
     ]); 
   }
-}
 
-class UsersListTab extends StatelessWidget {
-  final String searchQuery;
-  final ValueNotifier<List<_ChatData>> chatsNotifier;
-  final Future<void> Function() onRefresh;
-  final VoidCallback onChatClosed;
-  final List<dynamic> myBlockedUsers;
-  const UsersListTab({super.key, required this.searchQuery, required this.chatsNotifier, required this.onRefresh, required this.onChatClosed, required this.myBlockedUsers});
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final lang = Provider.of<LanguageProvider>(context); 
-
-    return LiquidPullToRefresh(
-        onRefresh: onRefresh,
-        color: theme.scaffoldBackgroundColor,
-        backgroundColor: theme.colorScheme.secondary,
-        child: ValueListenableBuilder<List<_ChatData>>(
-            valueListenable: chatsNotifier,
-            builder: (context, chats, child) {
-              final filteredChats = searchQuery.isEmpty ? chats : chats.where((chat) => chat.displayName.toLowerCase().contains(searchQuery.toLowerCase())).toList();
-              if (chats.isEmpty) { return Center(child: Text(lang.t('no_chats'), textAlign: TextAlign.center)); } 
-              return AnimationLimiter(
-                  child: ListView.builder(
-                      padding: const EdgeInsets.symmetric(vertical: 8.0),
-                      itemCount: filteredChats.length,
-                      itemBuilder: (context, index) {
-                        final chatData = filteredChats[index];
-                        return AnimationConfiguration.staggeredList(
-                          position: index, 
-                          duration: const Duration(milliseconds: 500),
-                          child: SlideAnimation(
-                            verticalOffset: 50.0, 
-                            child: FadeInAnimation(
-                              child: ChatListItem(
-                                key: ValueKey(chatData.userId), 
-                                chatData: chatData, 
-                                myBlockedUsers: myBlockedUsers, 
-                                onClosed: onChatClosed
-                              )
-                            )
-                          )
-                        );
-                      }
-                  )
-              );
-            }
-        )
-    );
-  }
-}
-
-class ChatListItem extends StatelessWidget {
-  final _ChatData chatData;
-  final List<dynamic> myBlockedUsers;
-  final VoidCallback onClosed;
-
-  const ChatListItem({
-    super.key, 
-    required this.chatData, 
-    required this.myBlockedUsers, 
-    required this.onClosed,
-  });
-
-  String _getChatRoomID(String uid1, String uid2) { List<String> ids = [uid1, uid2]; ids.sort(); return ids.join('_'); }
-
-  Future<void> _prepareAndOpenChat(BuildContext context) async {
-    final allChats = (context.findAncestorWidgetOfExactType<UsersListTab>()?.chatsNotifier.value) ?? [];
-    final List<Map<String, dynamic>> chatListAsJson = allChats.map((chat) => chat.toJson()).toList();
-    final String chatsJsonString = jsonEncode(chatListAsJson);
-
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('forwarding_contacts', chatsJsonString);
-
-    // ignore: use_build_context_synchronously
-    await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => ChatScreenWrapper(
-          receiverEmail: chatData.displayName,
-          receiverID: chatData.userId,
-        ),
-      ),
-    );
-    onClosed();
+  void _showWallpaperDialog() {
+    final lang = Provider.of<LanguageProvider>(context, listen: false);
+    showDialog(context: context, builder: (c) => AlertDialog(title: Text(lang.t('wallpaper')), content: Column(mainAxisSize: MainAxisSize.min, children: [
+      ListTile(leading: const Icon(Icons.photo), title: Text(lang.t('wallpaper_change')), onTap: () async {
+        Navigator.pop(context); final file = await ImagePicker().pickImage(source: ImageSource.gallery);
+        if (file != null) { (await SharedPreferences.getInstance()).setString('wallpaperPath', file.path); setState(() => _backgroundImagePath = file.path); }
+      }),
+      if (_backgroundImagePath != null) ListTile(leading: const Icon(Icons.delete_forever, color: Colors.redAccent), title: Text(lang.t('wallpaper_delete')), onTap: () async {
+        Navigator.pop(context); (await SharedPreferences.getInstance()).remove('wallpaperPath'); setState(() => _backgroundImagePath = null);
+      })
+    ])));
   }
 
+  Future<void> _loadWallpaper() async { final p = await SharedPreferences.getInstance(); setState(() => _backgroundImagePath = p.getString('wallpaperPath')); }
 
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final lang = Provider.of<LanguageProvider>(context); 
-    final currentUser = FirebaseAuth.instance.currentUser;
-    if (currentUser == null) return const SizedBox.shrink();
-    final chatRoomID = _getChatRoomID(currentUser.uid, chatData.userId);
-    
-    final bool iBlockedThisUser = myBlockedUsers.contains(chatData.userId);
-    final bool thisUserBlockedMe = chatData.blockedUsers.contains(currentUser.uid);
-    final bool isBlocked = iBlockedThisUser || thisUserBlockedMe;
-
-    final String? photoUrl = isBlocked ? null : chatData.photoUrl;
-    final String? localPhotoPath = isBlocked ? null : chatData.localPhotoPath;
-
-    ImageProvider? profileImageProvider;
-    if (localPhotoPath != null && File(localPhotoPath).existsSync()) {
-      profileImageProvider = FileImage(File(localPhotoPath));
-    } else if (photoUrl != null) {
-      profileImageProvider = NetworkImage(photoUrl);
+  void _checkProfileIntegrity() async {
+    final user = _auth.currentUser; if (user == null) return;
+    final doc = await _firestore.collection('users').doc(user.uid).get();
+    if (doc.exists && mounted && (doc.data()?['displayName'] ?? "").isEmpty) {
+      Navigator.pushReplacement(context, MaterialPageRoute(builder: (c) => const ProfileSetupScreen()));
     }
-    
-    final unreadCountStream = FirebaseFirestore.instance.collection('chat_rooms').doc(chatRoomID).collection('messages').where('receiverID', isEqualTo: currentUser.uid).where('status', isNotEqualTo: 'seen').snapshots();
-    
-    final bool isOfficialAdmin = chatData.userId == 'jembe_talk_official_admin';
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 10.0, vertical: 4.0),
-      child: GestureDetector(
-        onTap: () => _prepareAndOpenChat(context), 
-        child: StreamBuilder<QuerySnapshot>(
-          stream: unreadCountStream,
-          builder: (context, unreadSnapshot) {
-            final unreadCount = unreadSnapshot.data?.docs.length ?? 0;
-            final hasUnread = unreadCount > 0;
-            
-            final activityStream = FirebaseDatabase.instance.ref('activity/$chatRoomID/${chatData.userId}').onValue;
-            
-            return StreamBuilder<DatabaseEvent>(
-              stream: activityStream,
-              builder: (context, activitySnapshot) {
-                String activity = "idle";
-                if (activitySnapshot.hasData && activitySnapshot.data!.snapshot.value != null) {
-                  activity = activitySnapshot.data!.snapshot.value as String;
-                }
-
-                Widget subtitleWidget;
-                if (activity == 'typing') {
-                  subtitleWidget = Text(
-                    lang.t('typing'), 
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(color: theme.colorScheme.secondary, fontStyle: FontStyle.italic),
-                  );
-                } else if (activity == 'recording') {
-                  subtitleWidget = Text(
-                    lang.t('recording'), 
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(color: theme.colorScheme.secondary, fontStyle: FontStyle.italic),
-                  );
-                } else {
-                  subtitleWidget = LastMessagePreview(
-                    messageContent: chatData.lastMessageContent,
-                    messageType: chatData.lastMessageType,
-                    messageStatus: chatData.lastMessageStatus,
-                    senderId: chatData.lastMessageSenderId,
-                    currentUserID: currentUser.uid
-                  );
-                }
-
-                return ClipRRect(
-                  borderRadius: BorderRadius.circular(16.0),
-                  child: BackdropFilter(
-                    filter: ImageFilter.blur(sigmaX: 5.0, sigmaY: 5.0),
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: theme.colorScheme.surface.withAlpha(150),
-                        borderRadius: BorderRadius.circular(16.0),
-                        border: Border.all(color: theme.colorScheme.onSurface.withAlpha(51))
-                      ),
-                      child: Row(
-                        children: [
-                          Container(width: 8, color: hasUnread ? theme.colorScheme.secondary : Colors.transparent),
-                          Expanded(
-                            child: ListTile(
-                              contentPadding: const EdgeInsets.symmetric(horizontal: 10.0, vertical: 8.0),
-                              leading: OpenContainer(
-                                transitionType: ContainerTransitionType.fade, 
-                                transitionDuration: const Duration(milliseconds: 1000), 
-                                closedColor: Colors.transparent, 
-                                closedElevation: 0, 
-                                openBuilder: (c, a) => ContactInfoScreen(
-                                  userID: chatData.userId, 
-                                  userEmail: chatData.displayName, 
-                                  photoUrl: photoUrl,
-                                ), 
-                                closedBuilder: (c, a) => Hero(
-                                  tag: 'profile-pic-${chatData.userId}', 
-                                  child: Stack(
-                                    clipBehavior: Clip.none,
-                                    children: [
-                                      CircleAvatar(
-                                        radius: 28, 
-                                        backgroundImage: profileImageProvider, 
-                                        child: profileImageProvider == null ? const Icon(Icons.person, size: 30) : null
-                                      ),
-                                      StreamBuilder<DatabaseEvent>(
-                                        stream: FirebaseDatabase.instance.ref('status/${chatData.userId}').onValue,
-                                        builder: (context, presenceSnapshot) {
-                                          bool isOnline = false;
-                                          if (presenceSnapshot.hasData && presenceSnapshot.data!.snapshot.value != null) {
-                                            try {
-                                              final data = presenceSnapshot.data!.snapshot.value as Map<dynamic, dynamic>;
-                                              isOnline = data['state'] == 'online';
-                                            } catch(e) { /* ignore */ }
-                                          }
-                                          if (isOnline) {
-                                            return Positioned(
-                                              bottom: 0,
-                                              right: 0,
-                                              child: Container(
-                                                width: 15,
-                                                height: 15,
-                                                decoration: BoxDecoration(
-                                                  color: Colors.greenAccent,
-                                                  shape: BoxShape.circle,
-                                                  border: Border.all(color: theme.scaffoldBackgroundColor, width: 2.5)
-                                                ),
-                                              ),
-                                            );
-                                          } else {
-                                            return const SizedBox.shrink();
-                                          }
-                                        },
-                                      )
-                                    ],
-                                  )
-                                )
-                              ), 
-                              title: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Flexible(
-                                    child: Text(
-                                      chatData.displayName, 
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: TextStyle(
-                                        fontWeight: hasUnread ? FontWeight.bold : FontWeight.normal, 
-                                        color: theme.textTheme.bodyLarge?.color
-                                      )
-                                    ),
-                                  ),
-                                  if (isOfficialAdmin) ...[
-                                    const SizedBox(width: 5),
-                                    Container(
-                                      decoration: BoxDecoration(
-                                        shape: BoxShape.circle,
-                                        boxShadow: [
-                                          BoxShadow(color: Colors.amber.withOpacity(0.6), blurRadius: 6.0, spreadRadius: 1.0)
-                                        ]
-                                      ),
-                                      child: Icon(Icons.star_rounded, color: Colors.amber.shade400, size: 20),
-                                    ),
-                                  ],
-                                ],
-                              ),
-                              subtitle: subtitleWidget, 
-                              trailing: TrailingInfo(timestamp: chatData.lastMessageTimestamp, unreadCount: unreadCount)
-                            ),
-                          ),
-                        ]
-                      )
-                    )
-                  )
-                );
-              }
-            );
-          }
-        )
-      )
-    );
-  }
-}
-
-
-class LastMessagePreview extends StatelessWidget {
-  final String? messageContent;
-  final String? messageType;
-  final String? messageStatus;
-  final String? senderId;
-  final String currentUserID;
-
-  const LastMessagePreview({
-    super.key, 
-    this.messageContent, 
-    this.messageType, 
-    this.messageStatus, 
-    this.senderId,
-    required this.currentUserID
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    
-    if (messageType == null || messageType == 'deleted') {
-       return Text(
-         messageType == 'deleted' ? "🚫 Ubutumwa bwasibwe" : "", 
-         style: TextStyle(color: theme.textTheme.bodyMedium?.color, fontStyle: FontStyle.italic)
-       );
-    }
-
-    final isMe = senderId == currentUserID;
-    IconData? messageIcon;
-    String messageText;
-    
-    switch (messageType) {
-      case 'text': messageText = messageContent ?? ''; break;
-      case 'image': messageIcon = Icons.photo_camera; messageText = 'Ifoto'; break; 
-      case 'video': messageIcon = Icons.videocam; messageText = 'Video'; break;
-      case 'voice_note': messageIcon = Icons.mic; messageText = 'Ijwi'; break; 
-      case 'audio_file': messageIcon = Icons.headset; messageText = 'Audio'; break;
-      default: messageText = 'Ubutumwa';
-    }
-
-    return Row(children: [ 
-      if (isMe) _buildStatusIcon(messageStatus, theme), 
-      if (messageIcon != null) Icon(messageIcon, color: theme.textTheme.bodyMedium?.color, size: 16), 
-      if (messageIcon != null) const SizedBox(width: 4), 
-      Expanded(child: Text(messageText, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: theme.textTheme.bodyMedium?.color)))
-    ]);
-  }
-
-  Widget _buildStatusIcon(String? status, ThemeData theme) {
-    IconData icon; Color color = theme.textTheme.bodyMedium?.color ?? Colors.grey;
-    switch (status) {
-      case 'seen': icon = Icons.visibility; color = Colors.cyan.shade300; break;
-      case 'delivered': icon = Icons.done_all; color = theme.textTheme.bodyMedium?.color ?? Colors.grey; break;
-      case 'sent': icon = Icons.done; color = theme.textTheme.bodyMedium?.color ?? Colors.grey; break;
-      case 'failed': icon = Icons.error_outline; color = Colors.red.shade400; break;
-      case 'pending': default: icon = Icons.watch_later_outlined; color = theme.textTheme.bodyMedium?.color ?? Colors.grey;
-    }
-    return Padding(padding: const EdgeInsets.only(right: 6.0), child: Icon(icon, size: 16, color: color));
-  }
-}
-
-class TrailingInfo extends StatelessWidget {
-  final int timestamp;
-  final int unreadCount;
-  const TrailingInfo({super.key, required this.timestamp, required this.unreadCount});
-  
-  String _formatTimestamp(int ts) {
-    if (ts == 0) return '';
-    DateTime messageTime = DateTime.fromMillisecondsSinceEpoch(ts);
-    final now = DateTime.now();
-    if (now.year == messageTime.year && now.month == messageTime.month && now.day == messageTime.day) { return ('${messageTime.hour}:${messageTime.minute.toString().padLeft(2, '0')}'); }
-    return ('${messageTime.day}/${messageTime.month}/${messageTime.year % 100}');
   }
 
   @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final timeString = _formatTimestamp(timestamp);
-    
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.center, 
-      crossAxisAlignment: CrossAxisAlignment.end, 
-      children: [ 
-        Text(timeString, style: TextStyle(color: unreadCount > 0 ? const Color(0xFF25D366) : theme.textTheme.bodyMedium?.color, fontSize: 12)), 
-        const SizedBox(height: 4), 
-        if (unreadCount > 0) 
-          Container(
-            padding: const EdgeInsets.all(6), 
-            decoration: const BoxDecoration(color: Color(0xFF25D366), shape: BoxShape.circle), 
-            child: Text(unreadCount.toString(), style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold))
-          ) 
-        else 
-          const SizedBox(height: 22)
-      ]
-    );
-  }
-}
-
-class ContactsListTab extends StatelessWidget {
-  final String searchQuery; // YONGEWEMO HANO
-  final ValueNotifier<List<_ChatData>> contactsNotifier;
-  final Future<void> Function() onRefresh;
-  final VoidCallback onChatClosed;
-  final List<dynamic> myBlockedUsers;
-  const ContactsListTab({
-    super.key, 
-    required this.searchQuery, // YONGEWEMO HANO
-    required this.contactsNotifier, 
-    required this.onRefresh, 
-    required this.onChatClosed, 
-    required this.myBlockedUsers
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final lang = Provider.of<LanguageProvider>(context); 
-
-    return LiquidPullToRefresh(
-        onRefresh: onRefresh,
-        color: theme.scaffoldBackgroundColor,
-        backgroundColor: theme.colorScheme.secondary,
-        child: ValueListenableBuilder<List<_ChatData>>(
-            valueListenable: contactsNotifier,
-            builder: (context, contacts, child) {
-              
-              // HANO NIHO UBWENGE BWO GUSHAKA KURI CONTACTS BURI
-              final filteredContacts = searchQuery.isEmpty 
-                  ? contacts 
-                  : contacts.where((contact) => 
-                      contact.displayName.toLowerCase().contains(searchQuery.toLowerCase()) ||
-                      (contact.phoneNumber != null && contact.phoneNumber!.contains(searchQuery))
-                    ).toList();
-
-              if (filteredContacts.isEmpty) { 
-                return Center(child: Padding(padding: const EdgeInsets.all(20.0), child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [ 
-                  Text(
-                    searchQuery.isNotEmpty 
-                      ? "${lang.t('no_chats')} '$searchQuery'" 
-                      : "Nta n'umwe mu bo mufitanye inomero akoresha Jembe Talk.\nGerageza gukora 'refresh'.", 
-                    textAlign: TextAlign.center, 
-                    style: TextStyle(color: theme.textTheme.bodyMedium?.color, fontSize: 16)
-                  ), 
-                  if (searchQuery.isEmpty) ...[
-                    const SizedBox(height: 20), 
-                    ElevatedButton.icon(onPressed: onRefresh, icon: const Icon(Icons.refresh), label: const Text("Vugurura"))
-                  ]
-                ]))); 
-              }
-              
-              final sortedContacts = List<_ChatData>.from(filteredContacts);
-              sortedContacts.sort((a, b) => a.displayName.compareTo(b.displayName));
-              
-              return AnimationLimiter(
-                child: ListView.builder(
-                  padding: const EdgeInsets.symmetric(vertical: 8.0),
-                  itemCount: sortedContacts.length,
-                  itemBuilder: (context, index) {
-                    final user = sortedContacts[index];
-                    return AnimationConfiguration.staggeredList(
-                      position: index, 
-                      duration: const Duration(milliseconds: 500),
-                      child: SlideAnimation(
-                        verticalOffset: 50.0, 
-                        child: FadeInAnimation(
-                          child: _ContactListItem(
-                            chatData: user,
-                            myBlockedUsers: myBlockedUsers,
-                            onClosed: onChatClosed,
-                          )
-                        )
-                      )
-                    );
-                  },
-                ),
-              );
-            }
-        )
-    );
-  }
-}
-
-class _ContactListItem extends StatelessWidget {
-  final _ChatData chatData;
-  final List<dynamic> myBlockedUsers;
-  final VoidCallback onClosed;
-  const _ContactListItem({required this.chatData, required this.myBlockedUsers, required this.onClosed});
-
-  Future<void> _prepareAndOpenChat(BuildContext context) async {
-    final allChats = (context.findAncestorStateOfType<_HomeScreenState>()?._chatsNotifier.value) ?? [];
-    final List<Map<String, dynamic>> chatListAsJson = allChats.map((chat) => chat.toJson()).toList();
-    final String chatsJsonString = jsonEncode(chatListAsJson);
-
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('forwarding_contacts', chatsJsonString);
-
-    // ignore: use_build_context_synchronously
-    await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => ChatScreenWrapper(
-          receiverEmail: chatData.displayName,
-          receiverID: chatData.userId,
-        ),
-      ),
-    );
-    onClosed();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final currentUser = FirebaseAuth.instance.currentUser;
-    if (currentUser == null) return const SizedBox.shrink();
-
-    final bool iBlockedThisUser = myBlockedUsers.contains(chatData.userId);
-    final bool thisUserBlockedMe = chatData.blockedUsers.contains(currentUser.uid);
-    final bool isBlocked = iBlockedThisUser || thisUserBlockedMe;
-
-    final String? photoUrl = isBlocked ? null : chatData.photoUrl;
-    final String? localPhotoPath = isBlocked ? null : chatData.localPhotoPath;
-    
-    ImageProvider? profileImageProvider;
-    if (localPhotoPath != null && File(localPhotoPath).existsSync()) {
-      profileImageProvider = FileImage(File(localPhotoPath));
-    } else if (photoUrl != null) {
-      profileImageProvider = NetworkImage(photoUrl);
-    }
-
-    final String receiverID = chatData.userId;
-    final String receiverName = chatData.displayName;
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 10.0, vertical: 4.0),
-      child: GestureDetector(
-        onTap: () => _prepareAndOpenChat(context),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(16.0),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 5.0, sigmaY: 5.0),
-            child: Container(
-              decoration: BoxDecoration(
-                color: theme.colorScheme.surface.withAlpha(150),
-                borderRadius: BorderRadius.circular(16.0),
-                border: Border.all(color: theme.colorScheme.onSurface.withAlpha(51))
-              ),
-              child: ListTile(
-                contentPadding: const EdgeInsets.symmetric(horizontal: 10.0, vertical: 8.0),
-                leading: OpenContainer(
-                  transitionType: ContainerTransitionType.fade, 
-                  transitionDuration: const Duration(milliseconds: 1000), 
-                  closedColor: Colors.transparent, 
-                  closedElevation: 0, 
-                  openBuilder: (c, a) => ContactInfoScreen(
-                    userID: receiverID, 
-                    userEmail: receiverName, 
-                    photoUrl: photoUrl
-                  ), 
-                  closedBuilder: (c, a) => Hero(
-                    tag: 'profile-pic-$receiverID', 
-                    child: CircleAvatar(
-                      radius: 28, 
-                      backgroundImage: profileImageProvider, 
-                      child: profileImageProvider == null ? const Icon(Icons.person, size: 30) : null
-                    )
-                  )
-                ), 
-                title: Text(receiverName, style: TextStyle(color: theme.textTheme.bodyLarge?.color, fontWeight: FontWeight.w500)),
-                subtitle: Text(chatData.phoneNumber ?? '', style: TextStyle(color: theme.textTheme.bodyMedium?.color))
-              )
-            )
-          )
-        )
-      )
-    );
+  void dispose() {
+    _pageController.dispose(); _searchController.dispose();
+    _unreadChatsCountController.close();
+    _userChangesSubscription?.cancel(); _syncServiceSubscription?.cancel(); 
+    _broadcastSubscription?.cancel(); 
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
   }
 }

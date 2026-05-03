@@ -1,365 +1,316 @@
-// lib/tangaza_star/feed_manager.dart (VERSION IKOSOYE VYOSE)
-
 import 'dart:async';
-import 'package:flutter/foundation.dart';
+import 'dart:convert';
+import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:video_player/video_player.dart';
+import 'package:cached_video_player_plus/cached_video_player_plus.dart';
+import 'package:wakelock_plus/wakelock_plus.dart'; 
+
 import '../services/database_helper.dart';
+import '../services/r2_service.dart';
+import '../services/feed_cache_manager.dart'; 
 
 class FeedManager with ChangeNotifier {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseFunctions _functions = FirebaseFunctions.instanceFor(region: 'us-central1');
   final String? currentUserId = FirebaseAuth.instance.currentUser?.uid;
 
-  List<Map<String, dynamic>> _posts = [];
-  bool _isLoading = true;
-  bool _isFetchingMore = false;
-  DocumentSnapshot? _lastDocument;
-  bool _hasMorePosts = true;
-  
-  final Map<String, VideoPlayerController> _videoControllers = {};
-  int _currentPage = 0;
-  static const int _preloadNextCount = 2;
-  static const int _keepBehindCount = 3;
+  String get workerUrl => R2Service.workerUrl;
+  String get secretKey => R2Service.workerSecretKey;
 
-  final Map<String, StreamSubscription> _postSubscriptions = {};
+  static const int batchSize = 30; 
+  static const int triggerThreshold = 10; 
+
+  List<Map<String, dynamic>> _posts = [];
+  final List<String> _seenPostIds = []; 
+  
+  bool _isLoading = true; 
+  bool _isFetchingMore = false;
+  int _currentPage = 0;
+
+  CachedVideoPlayerPlusController? _activeController;
+  String? _activePostId;
 
   List<Map<String, dynamic>> get posts => _posts;
   bool get isLoading => _isLoading;
-  bool get isFetchingMore => _isFetchingMore;
+  String? get activePostId => _activePostId;
 
-  FeedManager() {
-    refreshFeed();
-  }
-
-  void setCurrentPage(int page) {
-    if (page == _currentPage) return;
-    _currentPage = page;
-    _manageVideoControllers();
-  }
-  
-  String? _getOptimizedUrl(String? originalUrl, {required bool forVideoPlayer}) {
-    if (originalUrl == null || originalUrl.isEmpty) return null;
-    try {
-      final uri = Uri.parse(originalUrl);
-      String path = uri.path;
-      String encodedFileName = path.split('%2F').last;
-      String originalFileName = Uri.decodeComponent(encodedFileName);
-
-      if (originalFileName.startsWith('optimized_') || originalFileName.startsWith('thumb_')) {
-        if (forVideoPlayer && originalFileName.startsWith('thumb_')) {
-          return originalUrl.replaceFirst('thumb_', 'optimized_').replaceFirst('.jpg', '.mp4');
-        }
-        return originalUrl;
-      }
-
-      String baseName = originalFileName.contains('.') ? originalFileName.substring(0, originalFileName.lastIndexOf('.')) : originalFileName;
-      
-      String newPrefix = forVideoPlayer ? 'optimized_' : 'thumb_';
-      String newExtension = forVideoPlayer ? 'mp4' : 'jpg';
-      
-      String newFileName = '$newPrefix$baseName.$newExtension';
-      String encodedNewFileName = Uri.encodeComponent(newFileName);
-      
-      return originalUrl.replaceAll(encodedFileName, encodedNewFileName);
-    } catch (e) {
-      debugPrint("Ikosa ryo guhimba URL nshya ($originalUrl): $e");
-      return originalUrl;
-    }
-  }
-
-  void _manageVideoControllers() {
-    final allPostIds = _posts.map((p) => p[DatabaseHelper.colPostId] as String).toList();
-    final Set<String> idsToKeep = {};
-
-    for (int i = 0; i <= _preloadNextCount; i++) {
-      int indexToPreload = _currentPage + i;
-      if (indexToPreload < allPostIds.length) {
-        final postId = allPostIds[indexToPreload];
-        idsToKeep.add(postId);
-        _preloadControllerFor(postId);
-      }
-    }
-
-    for (int i = 1; i <= _keepBehindCount; i++) {
-      int indexToKeep = _currentPage - i;
-      if (indexToKeep >= 0) {
-        idsToKeep.add(allPostIds[indexToKeep]);
-      }
-    }
-
-    final Set<String> currentControllers = _videoControllers.keys.toSet();
-    final Set<String> controllersToRemove = currentControllers.difference(idsToKeep);
-
-    for (var postId in controllersToRemove) {
-      _videoControllers[postId]?.dispose();
-      _videoControllers.remove(postId);
-      debugPrint("Video Controller ya $postId yasivye.");
-    }
-  }
-
-  void _preloadControllerFor(String postId) {
-    if (_videoControllers.containsKey(postId)) return;
-
-    final postIndex = _posts.indexWhere((p) => p[DatabaseHelper.colPostId] == postId);
-    if (postIndex == -1) return;
-
-    final post = _posts[postIndex];
-    final originalVideoUrl = post[DatabaseHelper.colVideoUrl] as String?;
-    final videoUrl = _getOptimizedUrl(originalVideoUrl, forVideoPlayer: true);
-
-    if (videoUrl != null && videoUrl.isNotEmpty) {
-      debugPrint("Ndiko ndategura video ya: $postId kuri URL: $videoUrl");
-      final controller = VideoPlayerController.networkUrl(Uri.parse(videoUrl));
-      _videoControllers[postId] = controller;
-      controller.initialize().then((_) {
-        controller.setVolume(0);
-      }).catchError((e) {
-        debugPrint("Kunanirwa gutegura video $postId: $e");
-        _videoControllers.remove(postId);
-      });
-    }
-  }
-  
-  VideoPlayerController? getPreloadedControllerFor(String postId) {
-    return _videoControllers[postId];
-  }
+  @override 
+  void notifyListeners() { if (hasListeners) super.notifyListeners(); }
 
   Future<void> refreshFeed() async {
-    _isLoading = true;
-    _posts = [];
-    _lastDocument = null;
-    _hasMorePosts = true;
-    _cancelAllSubscriptions();
-    _cancelAllVideoControllers();
-    notifyListeners();
-
+    _disposeActiveController();
     try {
-      // Intambwe ya 1: Gukurura amaposita abiri ya mbere
-      final hotPostsQuery = _firestore.collection('posts').orderBy('hotScore', descending: true).limit(2);
-      final snapshot = await hotPostsQuery.get();
-      List<Map<String, dynamic>> initialPosts = [];
-
-      if (snapshot.docs.isNotEmpty) {
-        _lastDocument = snapshot.docs.last;
-        initialPosts = await _processPostDocs(snapshot.docs);
-        _posts = initialPosts;
-        _listenToPostChanges(initialPosts);
-        _manageVideoControllers();
-        notifyListeners(); // Twerekana amaposita abiri ya mbere ako kanya
-      }
-      
-      // Intambwe ya 2: Gukurura "For You Feed" yose
-      final fullFeedPosts = await _fetchFullFeed();
-      
-      // Intambwe ya 3: Guhuza amaposita yose
-      if (fullFeedPosts.isNotEmpty) {
-        final existingPostIds = _posts.map((p) => p[DatabaseHelper.colPostId]).toSet();
-        final uniqueNewPosts = fullFeedPosts.where((p) => !existingPostIds.contains(p[DatabaseHelper.colPostId])).toList();
-        
-        _posts.addAll(uniqueNewPosts);
-        _listenToPostChanges(uniqueNewPosts);
-        _manageVideoControllers();
-
-        // <--- IKI NI CO GICE CAHINDUTSE --->
-        // Uwu murongo uca umenyesha UI ko urutonde rwose rwuzuye kandi ruhari.
+      final cachedRaw = await DatabaseHelper.instance.getStealthPosts();
+      if (cachedRaw.isNotEmpty) {
+        _posts = _processDbPosts(cachedRaw);
         notifyListeners(); 
       }
+    } catch (_) {}
 
-    } catch (e) {
-      debugPrint("Ikosa mu gutanguza feed: $e");
-    } finally {
-      _isLoading = false;
-      notifyListeners(); // Tumyesha UI bundi bushya n'urutonde rwose
-    }
-  }
-
-  Future<List<Map<String, dynamic>>> _fetchFullFeed() async {
-    if (_isFetchingMore || !_hasMorePosts) return [];
-    _isFetchingMore = true;
-
-    try {
-      final callable = _functions.httpsCallable('getForYouFeed');
-      final result = await callable.call();
-      final List<dynamic> postsFromServer = result.data as List<dynamic>;
-
-      if (postsFromServer.isNotEmpty) {
-        return await _processRawPosts(postsFromServer);
-      }
-    } catch (e) {
-      debugPrint("Ikosa ryo gukurura feed yose: $e");
-    } finally {
-      _isFetchingMore = false;
-    }
-    return [];
-  }
-  
-  Future<void> fetchMorePosts() async {
-    if (_isFetchingMore || !_hasMorePosts) {
-      return;
-    }
-
-    _isFetchingMore = true;
+    _isLoading = true; 
     notifyListeners();
 
     try {
-      Query query = _firestore.collection('posts').orderBy('hotScore', descending: true);
-      if (_lastDocument != null) {
-        query = query.startAfterDocument(_lastDocument!);
-      }
-      final snapshot = await query.limit(5).get();
+      await _fetchBatch(isRefresh: true);
+    } catch (e) {
+      debugPrint("⚠️ Network Error: $e");
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
 
-      if (snapshot.docs.isEmpty) {
-        _hasMorePosts = false;
-      } else {
-        _lastDocument = snapshot.docs.last;
-        final morePosts = await _processPostDocs(snapshot.docs);
-        _posts.addAll(morePosts);
-        _listenToPostChanges(morePosts);
-        _manageVideoControllers();
+  Future<void> _fetchBatch({bool isRefresh = false}) async {
+    if (_isFetchingMore) return;
+    _isFetchingMore = true;
+
+    try {
+      final result = await _functions.httpsCallable('getForYouFeed').call({
+        'seenIds': isRefresh ? [] : _seenPostIds,
+        'limit': batchSize
+      });
+
+      if (result.data != null && result.data is List) {
+        final List<Map<String, dynamic>> cloudPosts = _processRawPosts(result.data as List);
+
+        if (isRefresh) {
+          _posts = cloudPosts;
+          _seenPostIds.clear();
+          await DatabaseHelper.instance.clearAllStealthPosts(); 
+          for (var p in cloudPosts.take(15)) {
+            await DatabaseHelper.instance.saveStealthPost(
+              postId: p[DatabaseHelper.colPostId],
+              postDataJson: jsonEncode(p),
+              localPath: "" 
+            );
+          }
+        } else {
+          for (var p in cloudPosts) {
+            if (!_posts.any((x) => x[DatabaseHelper.colPostId] == p[DatabaseHelper.colPostId])) {
+              _posts.add(p);
+            }
+          }
+        }
+
+        for (var p in cloudPosts) {
+          if (!_seenPostIds.contains(p[DatabaseHelper.colPostId])) {
+            _seenPostIds.add(p[DatabaseHelper.colPostId]);
+          }
+        }
       }
     } catch (e) {
-      debugPrint("Ikosa mu telecharga andi maposita: $e");
+      debugPrint("Fetch batch error: $e");
     } finally {
       _isFetchingMore = false;
       notifyListeners();
     }
   }
-  
-  void _listenToPostChanges(List<Map<String, dynamic>> postsToListen) {
-    for (var post in postsToListen) {
-      final postId = post[DatabaseHelper.colPostId] as String;
-      if (_postSubscriptions.containsKey(postId)) continue;
-      
-      final subscription = _firestore.collection('posts').doc(postId).snapshots().listen((snapshot) {
-        if (snapshot.exists) {
-          _updatePostData(postId, snapshot.data()!);
-        } else {
-          _removePost(postId);
-        }
-      });
-      _postSubscriptions[postId] = subscription;
+
+  Future<void> loadTargetPostThenFeed(String targetPostId) async {
+    _isLoading = true; 
+    _disposeActiveController(); 
+    _posts.clear(); 
+    _seenPostIds.clear();
+    notifyListeners();
+
+    try {
+      final doc = await _firestore.collection('posts').doc(targetPostId).get();
+      if (doc.exists) {
+        final data = doc.data() as Map<String, dynamic>;
+        _posts = _processRawPosts([{...data, 'id': doc.id}]);
+        _seenPostIds.add(doc.id);
+        _isLoading = false;
+        notifyListeners();
+      }
+      await _fetchBatch(isRefresh: false);
+    } catch (e) { 
+      await refreshFeed(); 
+    } finally { 
+      _isLoading = false; 
+      notifyListeners(); 
     }
   }
 
-  void _updatePostData(String postId, Map<String, dynamic> newData) {
+  void setCurrentPage(int index) {
+    if (index < 0 || index >= _posts.length) return;
+    // Niba page ihindutse, hagarika buri kantu kose (Hard Stop)
+    if (_currentPage != index) {
+      _disposeActiveController();
+    }
+    _currentPage = index;
+    if (index >= _posts.length - triggerThreshold) { _fetchBatch(); }
+    notifyListeners();
+  }
+
+  Future<void> initializeAndPlayVideo(String postId) async {
+    // 1. Niba isanzwe ivuga, hagarara
+    if (_activePostId == postId && _activeController != null) return;
+    
+    // 2. Hagarika indi yari iriho (dispose)
+    _disposeActiveController();
+    
     final postIndex = _posts.indexWhere((p) => p[DatabaseHelper.colPostId] == postId);
-    if (postIndex != -1) {
-      _posts[postIndex][DatabaseHelper.colLikes] = newData['likes'] ?? _posts[postIndex][DatabaseHelper.colLikes];
-      _posts[postIndex][DatabaseHelper.colCommentsCount] = newData['commentsCount'] ?? _posts[postIndex][DatabaseHelper.colCommentsCount];
+    if (postIndex == -1) return;
+    
+    final networkUrl = _posts[postIndex]['networkVideoUrl'] ?? "";
+    if (networkUrl.isEmpty) return;
+    
+    // Bika iyi ID turi gushaka gufungura
+    String currentAttemptId = postId;
+    _activePostId = postId;
+    notifyListeners(); 
+    
+    try {
+      String finalUrl = _formatCloudUrl(networkUrl);
+      final controller = CachedVideoPlayerPlusController.networkUrl(
+        Uri.parse(finalUrl),
+        httpHeaders: {'X-Jembe-Auth': R2Service.workerSecretKey},
+      );
+      
+      // ✅ HARD LOCK: Genzura niba internet imaze kurangiza, ariko tukanareba niba umukoresha 
+      // yaba yaramaze kurenga iyi post (currentAttemptId != _activePostId).
+      await controller.initialize();
+
+      if (_activePostId != currentAttemptId) {
+        debugPrint("DEBUG: User swiped away during loading. Killing controller.");
+        controller.pause();
+        controller.dispose();
+        return; 
+      }
+      
+      controller.setLooping(true);
+      controller.play();
+      _activeController = controller;
+      
+      WakelockPlus.enable(); 
+      notifyListeners(); 
+    } catch (e) { 
+      if (_activePostId == currentAttemptId) {
+        _activePostId = null;
+        WakelockPlus.disable();
+        notifyListeners();
+      }
+    }
+  }
+
+  void _disposeActiveController() {
+    if (_activeController != null) {
+      try {
+        _activeController!.pause();
+        _activeController!.setVolume(0);
+        _activeController!.dispose();
+      } catch (e) {
+        debugPrint("Dispose error: $e");
+      }
+      _activeController = null;
+      _activePostId = null;
+    }
+    // Ibi bituma niba hari video yari iri "Loading" nayo imenya ko igomba guhagarara
+    _activePostId = null; 
+    WakelockPlus.disable();
+  }
+
+  void togglePlayback() {
+    if (_activeController != null && _activeController!.value.isInitialized) {
+      if (_activeController!.value.isPlaying) {
+        _activeController!.pause();
+        WakelockPlus.disable();
+      } else {
+        _activeController!.play();
+        WakelockPlus.enable();
+      }
       notifyListeners();
     }
   }
 
-  void _removePost(String postId) {
-    final postIndex = _posts.indexWhere((p) => p[DatabaseHelper.colPostId] == postId);
-    if (postIndex != -1) {
-      _posts.removeAt(postIndex);
-      _postSubscriptions.remove(postId)?.cancel();
-      _videoControllers.remove(postId)?.dispose();
+  void pauseAll() { 
+    _disposeActiveController(); // Koresha dispose mu mwanya wa pause gusa (Hard kill)
+    notifyListeners(); 
+  }
+
+  void clearSession() async { 
+    _disposeActiveController(); 
+    _seenPostIds.clear(); 
+    _currentPage = 0; 
+    try {
+      await DatabaseHelper.instance.clearAllStealthPosts();
+    } catch (_) {}
+    _posts.clear(); 
+    _isLoading = true; 
+    notifyListeners(); 
+  }
+
+  CachedVideoPlayerPlusController? get activeController => _activeController;
+
+  List<Map<String, dynamic>> _processDbPosts(List<Map<String, dynamic>> dbData) {
+    return dbData.map((c) {
+      final Map<String, dynamic> data = Map<String, dynamic>.from(jsonDecode(c[DatabaseHelper.colPostData]));
+      return { ...data, DatabaseHelper.colPostId: c[DatabaseHelper.colPostId], 'id': c[DatabaseHelper.colPostId] };
+    }).toList();
+  }
+
+  List<Map<String, dynamic>> _processRawPosts(List<dynamic> rawPosts) {
+    return rawPosts.map<Map<String, dynamic>>((p) {
+      final Map<String, dynamic> data = Map<String, dynamic>.from(p as Map);
+      final String postId = data['id'] ?? '';
+      return {
+        DatabaseHelper.colPostId: postId,
+        'id': postId,
+        'title': data['title'] ?? '',
+        DatabaseHelper.colText: data['content'] ?? '',
+        DatabaseHelper.colUserId: data['userId'] ?? data['uid'] ?? '',
+        DatabaseHelper.colLikes: data['likes'] ?? 0,
+        DatabaseHelper.colCommentsCount: data['commentsCount'] ?? 0,
+        DatabaseHelper.colViews: data['views'] ?? 0,
+        DatabaseHelper.colUserName: data['authorName'] ?? data['displayName'] ?? 'Star',
+        DatabaseHelper.colUserImageUrl: data['authorPhotoUrl'] ?? data['photoUrl'],
+        DatabaseHelper.colIsLikedByMe: (List<String>.from(data['likedBy'] ?? [])).contains(currentUserId),
+        DatabaseHelper.colImageUrl: data['imageUrl'],
+        'thumbnailUrl': data['thumbnailUrl'],
+        'networkVideoUrl': data['videoUrl'],
+        'timestamp': data['timestamp'], // Shows 2h
+      };
+    }).toList();
+  }
+
+  void markPostAsViewed(String postId) {
+    final index = _posts.indexWhere((p) => p[DatabaseHelper.colPostId] == postId);
+    if (index != -1) {
+      _posts[index][DatabaseHelper.colViews] = (_posts[index][DatabaseHelper.colViews] ?? 0) + 1;
+      notifyListeners(); 
+    }
+    _firestore.collection('posts').doc(postId).update({'views': FieldValue.increment(1)});
+  }
+
+  void updateCommentCount(String postId, int newCount) {
+    final index = _posts.indexWhere((p) => p[DatabaseHelper.colPostId] == postId);
+    if (index != -1) {
+      _posts[index][DatabaseHelper.colCommentsCount] = newCount;
       notifyListeners();
     }
   }
 
   void toggleLikeStatus(String postId) {
-    if (currentUserId == null) return;
-    final postIndex = _posts.indexWhere((p) => p[DatabaseHelper.colPostId] == postId);
-    if (postIndex == -1) return;
-    final post = _posts[postIndex];
-    final bool isCurrentlyLiked = post[DatabaseHelper.colIsLikedByMe] ?? false;
-    post[DatabaseHelper.colIsLikedByMe] = !isCurrentlyLiked;
-    post[DatabaseHelper.colLikes] = (post[DatabaseHelper.colLikes] ?? 0) + (isCurrentlyLiked ? -1 : 1);
+    final index = _posts.indexWhere((p) => p[DatabaseHelper.colPostId] == postId);
+    if (index == -1 || currentUserId == null) return;
+    final bool isLiked = _posts[index][DatabaseHelper.colIsLikedByMe] ?? false;
+    _posts[index][DatabaseHelper.colIsLikedByMe] = !isLiked;
+    _posts[index][DatabaseHelper.colLikes] = (_posts[index][DatabaseHelper.colLikes] ?? 0) + (isLiked ? -1 : 1);
     notifyListeners();
     _firestore.collection('posts').doc(postId).update({
-      'likes': FieldValue.increment(isCurrentlyLiked ? -1 : 1),
-      'likedBy': isCurrentlyLiked ? FieldValue.arrayRemove([currentUserId]) : FieldValue.arrayUnion([currentUserId]),
-    }).catchError((e) {
-      debugPrint("Ikosa ryo guhindura like kuri server: $e");
-      post[DatabaseHelper.colIsLikedByMe] = isCurrentlyLiked;
-      post[DatabaseHelper.colLikes] = (post[DatabaseHelper.colLikes] ?? 0) - (isCurrentlyLiked ? -1 : 1);
-      notifyListeners();
+      'likes': FieldValue.increment(isLiked ? -1 : 1), 
+      'likedBy': isLiked ? FieldValue.arrayRemove([currentUserId]) : FieldValue.arrayUnion([currentUserId])
     });
-    if (!isCurrentlyLiked) {
-      _firestore.collection('user_likes').add({'userId': currentUserId, 'postId': postId});
-    }
   }
 
-  void _cancelAllSubscriptions() {
-    _postSubscriptions.forEach((key, subscription) {
-      subscription.cancel();
-    });
-    _postSubscriptions.clear();
-  }
-  
-  void _cancelAllVideoControllers() {
-    _videoControllers.forEach((key, controller) {
-      controller.dispose();
-    });
-    _videoControllers.clear();
+  String _formatCloudUrl(String url) {
+    if (!url.startsWith('http')) return url;
+    if (url.contains('auth=')) return url; 
+    final path = Uri.parse(url).path;
+    return "${R2Service.workerUrl}$path?auth=${R2Service.workerSecretKey}";
   }
 
-  @override
-  void dispose() {
-    _cancelAllSubscriptions();
-    _cancelAllVideoControllers();
-    super.dispose();
-  }
-
-  Future<List<Map<String, dynamic>>> _processPostDocs(List<QueryDocumentSnapshot> docs) async {
-    final List<Future<Map<String, dynamic>>> postFutures = docs.map((doc) async {
-      final postData = doc.data() as Map<String, dynamic>;
-      final postId = doc.id;
-      if (postData['commentsCount'] == null) {
-        final commentsSnapshot = await _firestore.collection('posts').doc(postId).collection('comments').get();
-        postData['commentsCount'] = commentsSnapshot.size;
-      }
-      return {'id': postId, ...postData};
-    }).toList();
-    final rawPosts = await Future.wait(postFutures);
-    return _processRawPosts(rawPosts);
-  }
-
-  Future<List<Map<String, dynamic>>> _processRawPosts(List<dynamic> rawPosts) async {
-    final userIds = rawPosts.map((post) => post['userId'] as String?).where((id) => id != null).toSet().toList();
-    Map<String, dynamic> usersMap = {};
-    if (userIds.isNotEmpty) {
-      final usersSnapshot = await _firestore.collection('users').where(FieldPath.documentId, whereIn: userIds).get();
-      usersMap = {for (var doc in usersSnapshot.docs) doc.id: doc.data()};
-    }
-    return rawPosts.map<Map<String, dynamic>>((postData) {
-      final authorId = postData['userId'] as String?;
-      final authorData = usersMap[authorId];
-      final likedByList = List<String>.from(postData['likedBy'] ?? []);
-      
-      final dynamic rawTimestamp = postData['timestamp'];
-      Timestamp? timestamp;
-      if (rawTimestamp is Map) {
-        final seconds = rawTimestamp['_seconds'] as int?;
-        final nanoseconds = rawTimestamp['_nanoseconds'] as int?;
-        if (seconds != null && nanoseconds != null) {
-          timestamp = Timestamp(seconds, nanoseconds);
-        }
-      } else if (rawTimestamp is Timestamp) {
-        timestamp = rawTimestamp;
-      }
-
-      return {
-        DatabaseHelper.colPostId: postData['id'], 
-        DatabaseHelper.colText: postData['content'], 
-        DatabaseHelper.colUserId: postData['userId'],
-        'timestamp_server': timestamp,
-        DatabaseHelper.colLikes: postData['likes'] ?? 0,
-        DatabaseHelper.colCommentsCount: postData['commentsCount'] ?? 0, 
-        DatabaseHelper.colViews: postData['views'] ?? 0,
-        DatabaseHelper.colIsStar: postData['isStar'] ?? false,
-        DatabaseHelper.colUserName: authorData?['displayName'] ?? 'Ata Zina', 
-        DatabaseHelper.colUserImageUrl: authorData?['photoUrl'],
-        DatabaseHelper.colIsLikedByMe: likedByList.contains(currentUserId),
-        DatabaseHelper.colImageUrl: postData['imageUrl'], 
-        DatabaseHelper.colVideoUrl: postData['videoUrl'],
-      };
-    }).toList();
-  }
+  @override void dispose() { _disposeActiveController(); super.dispose(); }
 }

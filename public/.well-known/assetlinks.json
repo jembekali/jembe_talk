@@ -1,9 +1,16 @@
-[{
-  "relation": ["delegate_permission/common.handle_all_urls"],
-  "target": {
-    "namespace": "android_app",
-    "package_name": "com.example.jembe_talk",
-    "sha256_cert_fingerprints":
-    ["FC:6E:38:87:1F:25:67:CE:B0:26:C2:71:73:03:0F:48:39:46:6E:C5:D9:37:DB:F6:95:3E:6E:5C:3F:18:D5:FC"]
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.jembetalk.app",
+      "sha256_cert_fingerprints": [
+        "86:AB:75:C0:1A:AA:D8:9D:7E:EE:4E:7F:62:A8:AD:74:DC:B5:37:1B:0D:62:09:A2:6B:94:58:68:C7:5D:18:2E",
+        "FC:6E:38:87:1F:25:67:CE:B0:26:C2:71:73:03:0F:48:39:46:6E:C5:D9:37:DB:F6:95:3E:6E:5C:3F:18:D5:FC",
+        "10:88:0F:63:36:95:C8:D7:5C:DE:AC:6B:B6:34:4D:ED:AD:37:A6:93:A2:BD:BC:6A:A1:9C:B0:6D:3C:DF:35:C2"
+      ]
+    }
   }
-}]
+]

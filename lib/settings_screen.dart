@@ -175,7 +175,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     child: Column(
                       children: [
                         Text("from", style: TextStyle(color: theme.textTheme.bodyMedium?.color?.withOpacity(0.7))),
-                        Text("JEMBE KALI.", style: TextStyle(color: theme.textTheme.bodyLarge?.color, fontWeight: FontWeight.bold, letterSpacing: 2)),
+                        Text("JK SYSTEM.", style: TextStyle(color: theme.textTheme.bodyLarge?.color, fontWeight: FontWeight.bold, letterSpacing: 2)),
                       ],
                     ),
                   ),

@@ -1,35 +1,37 @@
-// lib/edit_profile_screen.dart (YAKOSOWE: Theme Adaptive)
 
+import 'dart:async';
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:provider/provider.dart'; 
-import 'package:jembe_talk/language_provider.dart'; 
+import 'package:image/image.dart' as img;
+import 'package:image_editor_plus/image_editor_plus.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:provider/provider.dart';
+import 'package:jembe_talk/language_provider.dart';
+import 'package:jembe_talk/services/r2_service.dart';
 import 'package:jembe_talk/full_photo_screen.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class EditProfileScreen extends StatefulWidget {
   const EditProfileScreen({super.key});
-
   @override
   State<EditProfileScreen> createState() => _EditProfileScreenState();
 }
 
 class _EditProfileScreenState extends State<EditProfileScreen> {
-  final FirebaseAuth _auth = FirebaseAuth.instance;
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final FirebaseStorage _storage = FirebaseStorage.instance;
-  
-  final TextEditingController _nameController = TextEditingController();
-  final TextEditingController _aboutController = TextEditingController();
-  final TextEditingController _phoneController = TextEditingController(); 
-  
-  String? _photoUrl;
-  bool _isLoading = true;
-  bool _isSaving = false;
-  File? _imageFile;
+  final _formKey = GlobalKey<FormState>();
+  final _nameController = TextEditingController();
+  final _aboutController = TextEditingController();
+
+  File? _selectedImage;
+  String? _currentPhotoUrl;
+  String _phoneNumber = "";
+  bool _isLoading = false;
 
   @override
   void initState() {
@@ -38,242 +40,337 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   }
 
   Future<void> _loadUserData() async {
-    final user = _auth.currentUser;
-    final lang = Provider.of<LanguageProvider>(context, listen: false);
+    final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
 
-    try {
-      final doc = await _firestore.collection('users').doc(user.uid).get();
-      if (doc.exists) {
-        final data = doc.data()!;
-        _nameController.text = data['displayName'] ?? data['email'] ?? '';
-        _aboutController.text = data['about'] ?? '';
-        
-        // Gushira numero muri controller
-        String phoneNumber = data['phoneNumber'] ?? user.phoneNumber ?? '';
-        _phoneController.text = phoneNumber;
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _nameController.text = prefs.getString('user_displayName') ?? '';
+      _aboutController.text = prefs.getString('user_about') ?? '';
+      _currentPhotoUrl = prefs.getString('user_photoUrl');
+    });
 
-        if (mounted) {
-          setState(() {
-            _photoUrl = data['photoUrl'];
-            _isLoading = false;
-          });
+    final doc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
+    if (doc.exists && mounted) {
+      final data = doc.data()!;
+      setState(() { 
+        _nameController.text = data['displayName'] ?? ''; 
+        _aboutController.text = data['about'] ?? ''; 
+        _currentPhotoUrl = data['photoUrl']; 
+        _phoneNumber = data['phoneNumber'] ?? ""; 
+      });
+    }
+  }
+
+  Future<void> _openImageEditor() async {
+    Uint8List? imageBytes;
+
+    if (_selectedImage != null) {
+      imageBytes = await _selectedImage!.readAsBytes();
+    } else if (_currentPhotoUrl != null) {
+      try {
+        final ByteData data = await NetworkAssetBundle(Uri.parse(_currentPhotoUrl!)).load("");
+        imageBytes = data.buffer.asUint8List();
+      } catch (e) { return; }
+    }
+
+    if (imageBytes != null && mounted) {
+      final editedImage = await Navigator.push(
+        context,
+        MaterialPageRoute(builder: (context) => ImageEditor(image: imageBytes!)),
+      );
+
+      if (editedImage != null && editedImage is Uint8List) {
+        final tempDir = await getTemporaryDirectory();
+        final file = await File('${tempDir.path}/profile_${DateTime.now().millisecondsSinceEpoch}.jpg').create();
+        await file.writeAsBytes(editedImage);
+        setState(() { _selectedImage = file; });
+      }
+    }
+  }
+
+  Future<void> _pickImage() async {
+    final pickedFile = await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 90);
+    if (pickedFile != null) {
+      setState(() { _selectedImage = File(pickedFile.path); });
+    }
+  }
+
+  Future<void> _handleDeletePhoto() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+    setState(() => _isLoading = true);
+    try {
+      await R2Service().deleteFile("profiles/${user.uid}.jpg");
+      await FirebaseFirestore.instance.collection('users').doc(user.uid).update({'photoUrl': null});
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('user_photoUrl');
+      setState(() { _currentPhotoUrl = null; _selectedImage = null; });
+    } catch (e) {
+      debugPrint("Delete Error: $e");
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _updateProfile() async {
+    // 1. Genzura validator (Ubu izina gusa ni ryo rya ngombwa)
+    if (!_formKey.currentState!.validate()) return;
+    
+    setState(() => _isLoading = true);
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) return;
+      String? photoUrl = _currentPhotoUrl;
+
+      if (_selectedImage != null) {
+        final bytes = await _selectedImage!.readAsBytes();
+        img.Image? image = img.decodeImage(bytes);
+        if (image != null) {
+          final compressedBytes = img.encodeJpg(image, quality: 70);
+          final tempDir = await getTemporaryDirectory();
+          final compressedFile = await File('${tempDir.path}/upd_${user.uid}.jpg').writeAsBytes(compressedBytes);
+          String rawUrl = await R2Service().uploadFile(compressedFile, "profiles/${user.uid}.jpg", 'image/jpeg');
+          photoUrl = "$rawUrl&t=${DateTime.now().millisecondsSinceEpoch}";
         }
       }
-    } catch (e) {
-      if (mounted) {
-        setState(() => _isLoading = false);
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("${lang.t('profile_error_load')} $e")));
-      }
-    }
-  }
 
-  Future<void> _pickImage(ImageSource source) async {
-    final lang = Provider.of<LanguageProvider>(context, listen: false);
-    try {
-      final pickedFile = await ImagePicker().pickImage(source: source, imageQuality: 80);
-      if (pickedFile != null) {
-        setState(() {
-          _imageFile = File(pickedFile.path);
-        });
-      }
-    } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("${lang.t('error_generic')} $e")));
-    }
-  }
-
-  void _showImagePickerOptions() {
-    if(!mounted) return;
-    final lang = Provider.of<LanguageProvider>(context, listen: false);
-    
-    showModalBottomSheet(
-      context: context,
-      builder: (context) => SafeArea(
-        child: Wrap(
-          children: <Widget>[
-            ListTile(
-              leading: const Icon(Icons.photo_library),
-              title: Text(lang.t('profile_pick_gallery')), 
-              onTap: () {
-                _pickImage(ImageSource.gallery);
-                Navigator.of(context).pop();
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.photo_camera),
-              title: Text(lang.t('profile_pick_camera')), 
-              onTap: () {
-                _pickImage(ImageSource.camera);
-                Navigator.of(context).pop();
-              },
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-  
-  Future<void> _saveProfile() async {
-    final user = _auth.currentUser;
-    final lang = Provider.of<LanguageProvider>(context, listen: false);
-    if (user == null) return;
-    
-    setState(() => _isSaving = true);
-    
-    try {
-      String? newPhotoUrl = _photoUrl;
-      
-      if (_imageFile != null) {
-        final ref = _storage.ref().child('profile_pictures').child('${user.uid}.jpg');
-        await ref.putFile(_imageFile!);
-        newPhotoUrl = await ref.getDownloadURL();
+      // <<<--- LOGIC YA DEFAULT ABOUT --->>>
+      String finalAbout = _aboutController.text.trim();
+      if (finalAbout.isEmpty) {
+        finalAbout = "Hi there! I am using Jembe Talk";
       }
       
-      await _firestore.collection('users').doc(user.uid).update({
-        'displayName': _nameController.text.trim(),
-        'about': _aboutController.text.trim(),
-        'photoUrl': newPhotoUrl,
+      await FirebaseFirestore.instance.collection('users').doc(user.uid).update({
+        'displayName': _nameController.text.trim(), 
+        'about': finalAbout, // Koresha jambo rya default niba ari ubusa
+        'photoUrl': photoUrl,
+        'lastUpdated': FieldValue.serverTimestamp(),
       });
-
-      if(!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(lang.t('profile_updated'))));
-      Navigator.of(context).pop();
-
+      
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('user_displayName', _nameController.text.trim());
+      await prefs.setString('user_about', finalAbout);
+      if (photoUrl != null) await prefs.setString('user_photoUrl', photoUrl);
+      
+      if (mounted) { 
+        HapticFeedback.mediumImpact();
+        Navigator.pop(context); 
+      }
     } catch (e) {
-      if(!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("${lang.t('profile_error_save')} $e")));
+      debugPrint("$e");
     } finally {
-      if (mounted) setState(() => _isSaving = false);
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final heroTag = 'edit-profile-pic';
     final lang = Provider.of<LanguageProvider>(context);
-    final theme = Theme.of(context);
-    
-    // <<< HANO: Turagenzura niba ari Dark Mode canke Light Mode
-    final isDarkMode = theme.brightness == Brightness.dark;
-    
-    // Amabara duhitamo gukoresha
-    final readOnlyFillColor = isDarkMode ? Colors.grey.shade800 : Colors.grey.shade100;
-    final helperTextColor = isDarkMode ? Colors.grey.shade400 : Colors.grey.shade600;
 
     return Scaffold(
+      backgroundColor: const Color(0xFF0F171E),
       appBar: AppBar(
-        title: Text(lang.t('profile_edit_title')),
-        backgroundColor: Colors.teal,
-        actions: [
-          _isSaving 
-            ? const Padding(padding: EdgeInsets.all(16.0), child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white)))
-            : IconButton(icon: const Icon(Icons.save), onPressed: _saveProfile)
+        title: Text(lang.t('profile_setup_title'), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+        backgroundColor: Colors.transparent, elevation: 0, centerTitle: true,
+      ),
+      body: Container(
+        height: double.infinity, width: double.infinity,
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            colors: [Color(0xFF0F171E), Color(0xFF1A252F)],
+            begin: Alignment.topCenter, end: Alignment.bottomCenter,
+          )
+        ),
+        child: SingleChildScrollView(
+          physics: const BouncingScrollPhysics(),
+          padding: const EdgeInsets.symmetric(horizontal: 25),
+          child: Column(
+            children: [
+              const SizedBox(height: 20),
+              _buildAvatarSection(),
+              const SizedBox(height: 10),
+              Text(_phoneNumber, style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 14)),
+              const SizedBox(height: 30),
+              Form(
+                key: _formKey,
+                child: Column(
+                  children: [
+                    _buildCustomTextField(
+                      controller: _nameController,
+                      label: lang.t('profile_name_label'), 
+                      icon: Icons.person_outline_rounded,
+                      maxLength: 15,
+                      isOptional: false, // Izina rirakenewe
+                    ),
+                    const SizedBox(height: 15),
+                    _buildCustomTextField(
+                      controller: _aboutController,
+                      label: lang.t('profile_about_label'), 
+                      icon: Icons.info_outline_rounded,
+                      maxLines: 2,
+                      isOptional: true, // "About" ishobora gusimbukwa
+                    ),
+                    const SizedBox(height: 40),
+                    _buildSaveButton(lang), 
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAvatarSection() {
+    ImageProvider? bgImage;
+    if (_selectedImage != null) {
+      bgImage = FileImage(_selectedImage!);
+    } else if (_currentPhotoUrl != null && _currentPhotoUrl!.isNotEmpty) {
+      bgImage = CachedNetworkImageProvider(_currentPhotoUrl!);
+    }
+
+    return Center(
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          GestureDetector(
+            onTap: () {
+              if (bgImage != null) {
+                String path = _selectedImage?.path ?? _currentPhotoUrl!;
+                Navigator.push(context, MaterialPageRoute(builder: (c) => FullPhotoScreen(imageUrl: path, heroTag: 'profile-pic-edit', isLocalFile: _selectedImage != null)));
+              }
+            },
+            child: Hero(
+              tag: 'profile-pic-edit',
+              child: Opacity(
+                opacity: _isLoading ? 0.5 : 1.0, 
+                child: CircleAvatar(
+                  radius: 65,
+                  backgroundColor: const Color(0xFF1C2935),
+                  backgroundImage: bgImage,
+                  child: (bgImage == null) ? const Icon(Icons.person_rounded, size: 65, color: Colors.white24) : null,
+                ),
+              ),
+            ),
+          ),
+          if (_isLoading)
+            const SizedBox(
+              height: 65, width: 65,
+              child: CircularProgressIndicator(color: Colors.tealAccent, strokeWidth: 3),
+            ),
+          if (!_isLoading)
+            Positioned(
+              bottom: 0, right: 0,
+              child: GestureDetector(
+                onTap: () { HapticFeedback.lightImpact(); _showImageOptions(); },
+                child: Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: const BoxDecoration(color: Colors.tealAccent, shape: BoxShape.circle),
+                  child: const Icon(Icons.camera_alt_rounded, color: Color(0xFF0F171E), size: 20),
+                ),
+              ),
+            ),
+          if (!_isLoading && (bgImage != null))
+            Positioned(
+              top: 0, right: 0,
+              child: GestureDetector(
+                onTap: () { HapticFeedback.lightImpact(); _openImageEditor(); },
+                child: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(color: Colors.white.withOpacity(0.9), shape: BoxShape.circle),
+                  child: const Icon(Icons.edit_rounded, color: Color(0xFF0F171E), size: 18),
+                ),
+              ),
+            ),
         ],
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : SingleChildScrollView(
-              padding: const EdgeInsets.all(16.0),
-              child: Column(
+    );
+  }
+
+  Widget _buildCustomTextField({
+    required TextEditingController controller, 
+    required String label, 
+    required IconData icon, 
+    int maxLines = 1, 
+    int? maxLength,
+    bool isOptional = false, // Parameter nshya
+  }) {
+    final lang = Provider.of<LanguageProvider>(context, listen: false);
+    return TextFormField(
+      controller: controller,
+      maxLines: maxLines,
+      maxLength: maxLength,
+      style: const TextStyle(color: Colors.white, fontSize: 16),
+      decoration: InputDecoration(
+        labelText: label,
+        labelStyle: TextStyle(color: Colors.white.withOpacity(0.4), fontSize: 14),
+        prefixIcon: Icon(icon, color: Colors.tealAccent, size: 22),
+        enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.white.withOpacity(0.1))),
+        focusedBorder: const UnderlineInputBorder(borderSide: BorderSide(color: Colors.tealAccent)),
+        counterStyle: const TextStyle(color: Colors.white24),
+      ),
+      validator: (v) {
+        if (isOptional) return null; // Niba ari optional, ntacyo ubaza
+        return (v == null || v.isEmpty) ? lang.t('val_required') : null;
+      },
+    );
+  }
+
+  Widget _buildSaveButton(LanguageProvider lang) {
+    return SizedBox(
+      width: double.infinity, height: 55,
+      child: ElevatedButton(
+        onPressed: _isLoading ? null : _updateProfile,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: Colors.tealAccent,
+          foregroundColor: const Color(0xFF0F171E),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+        ),
+        child: _isLoading
+          ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF0F171E)))
+          : Text(lang.t('btn_save_continue').toUpperCase(), style: const TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1.2)),
+      ),
+    );
+  }
+
+  void _showImageOptions() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1A252F),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (context) => Container(
+        padding: const EdgeInsets.symmetric(vertical: 30),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          children: [
+            InkWell(
+              onTap: () { Navigator.pop(context); _pickImage(); },
+              child: const Column(
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  const SizedBox(height: 20),
-                  Center(
-                    child: Stack(
-                      children: [
-                        GestureDetector(
-                          onTap: () {
-                            final imageToShow = _imageFile?.path ?? _photoUrl;
-                            if (imageToShow != null && mounted) {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (context) => FullPhotoScreen(
-                                    imageUrl: imageToShow,
-                                    heroTag: heroTag,
-                                  ),
-                                ),
-                              );
-                            }
-                          },
-                          child: Hero(
-                            tag: heroTag,
-                            child: CircleAvatar(
-                              radius: 70,
-                              backgroundColor: Colors.grey.shade300,
-                              backgroundImage: _imageFile != null 
-                                  ? FileImage(_imageFile!) 
-                                  : (_photoUrl != null ? NetworkImage(_photoUrl!) : null) as ImageProvider?,
-                              child: _imageFile == null && _photoUrl == null
-                                  ? const Icon(Icons.person, size: 70, color: Colors.white)
-                                  : null,
-                            ),
-                          ),
-                        ),
-                        Positioned(
-                          bottom: 0,
-                          right: 0,
-                          child: CircleAvatar(
-                            backgroundColor: Colors.teal,
-                            child: IconButton(
-                              icon: const Icon(Icons.camera_alt, color: Colors.white),
-                              onPressed: _showImagePickerOptions,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 40),
-                  
-                  // Izina
-                  TextField(
-                    controller: _nameController,
-                    decoration: InputDecoration(
-                      labelText: lang.t('profile_name_label'), 
-                      icon: const Icon(Icons.person),
-                      border: const OutlineInputBorder(),
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-
-                  // Ibikuranga
-                  TextField(
-                    controller: _aboutController,
-                    maxLength: 139,
-                    decoration: InputDecoration(
-                      labelText: lang.t('profile_about_label'),
-                      icon: const Icon(Icons.info_outline),
-                      border: const OutlineInputBorder(),
-                    ),
-                  ),
-                  
-                  const SizedBox(height: 10),
-
-                  // <<< NUMERO YA TELEFONE (Irakurikiza Theme)
-                  TextField(
-                    controller: _phoneController,
-                    readOnly: true, 
-                    style: TextStyle(color: theme.textTheme.bodyLarge?.color), // Ibara ry'inyandiko
-                    decoration: InputDecoration(
-                      labelText: "Numero ya Telefone", 
-                      icon: Icon(Icons.phone, color: theme.iconTheme.color),
-                      labelStyle: TextStyle(color: theme.textTheme.bodyMedium?.color),
-                      border: const OutlineInputBorder(),
-                      filled: true,
-                      fillColor: readOnlyFillColor, // Ibara ry'inyuma rihinduka
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  
-                  // Agasobanuro gato
-                  Text(
-                    "Numero yawe ntiushobora kuyihindurira hano.",
-                    style: TextStyle(color: helperTextColor, fontSize: 12),
-                    textAlign: TextAlign.center,
-                  ),
+                  Icon(Icons.image_rounded, color: Colors.tealAccent, size: 45),
+                  SizedBox(height: 8),
+                  Text("Gallery", style: TextStyle(color: Colors.white)),
                 ],
               ),
             ),
+            if (_currentPhotoUrl != null || _selectedImage != null)
+              InkWell(
+                onTap: () { Navigator.pop(context); _handleDeletePhoto(); },
+                child: const Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.delete_forever_rounded, color: Colors.redAccent, size: 45),
+                    SizedBox(height: 8),
+                    Text("Delete", style: TextStyle(color: Colors.redAccent)),
+                  ],
+                ),
+              ),
+          ],
+        ),
+      ),
     );
   }
 }

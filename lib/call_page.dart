@@ -1,8 +1,6 @@
-// lib/call_page.dart (CODE YA NYUMA KANDI YOROSHYE)
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:jembe_talk/constants.dart';
-import 'package:zego_uikit_prebuilt_call/zego_uikit_prebuilt_call.dart';
+// import 'package:zego_uikit_prebuilt_call/zego_uikit_prebuilt_call.dart'; // Yakuweho
 
 class CallPage extends StatelessWidget {
   final String callID;
@@ -27,19 +25,25 @@ class CallPage extends StatelessWidget {
       );
     }
 
-    // Iyi ni yo config yonyine dukeneye.
-    // Irahitamo hagati ya Video na Audio, hanyuma package ikikora ibindi.
+    // Zego UIKit yakuweho by'agateganyo
+    /*
     final config = isVideoCall
         ? ZegoUIKitPrebuiltCallConfig.oneOnOneVideoCall()
         : ZegoUIKitPrebuiltCallConfig.oneOnOneVoiceCall();
+    */
 
-    return ZegoUIKitPrebuiltCall(
-      appID: appID,
-      appSign: appSign,
-      userID: currentUser.uid,
-      userName: currentUser.email ?? "Jembe User",
-      callID: callID,
-      config: config,
+    return Scaffold(
+      appBar: AppBar(title: Text(isVideoCall ? "Video Call" : "Voice Call")),
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.call_end, size: 100, color: Colors.red),
+            const SizedBox(height: 20),
+            Text("Guhamagara $receiverName ntibishoboka muri iyi Version."),
+          ],
+        ),
+      ),
     );
   }
 }

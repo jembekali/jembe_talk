@@ -1,23 +1,27 @@
-// lib/network_video_player.dart (YAKOSOWE: WAKELOCK YONGEWEMO)
-
+// lib/network_video_player.dart
 import 'package:chewie/chewie.dart';
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
+import 'package:youtube_player_flutter/youtube_player_flutter.dart'; 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:jembe_talk/widgets/tv_ticker_widget.dart';
-import 'package:wakelock_plus/wakelock_plus.dart'; // <<< IYI NI NSHYA
+import 'package:wakelock_plus/wakelock_plus.dart';
 
 class NetworkVideoPlayerScreen extends StatefulWidget {
-  final String streamUrl;
+  final String? streamUrl; 
+  final String? videoId;   
   final String title;
   final String channelId;
+  final String type; 
 
   const NetworkVideoPlayerScreen({
     super.key,
-    required this.streamUrl,
+    this.streamUrl,
+    this.videoId,
     required this.title,
     required this.channelId,
+    required this.type,
   });
 
   @override
@@ -25,22 +29,51 @@ class NetworkVideoPlayerScreen extends StatefulWidget {
 }
 
 class _NetworkVideoPlayerScreenState extends State<NetworkVideoPlayerScreen> {
-  late VideoPlayerController _videoPlayerController;
+  VideoPlayerController? _videoPlayerController;
   ChewieController? _chewieController;
+  YoutubePlayerController? _youtubeController;
+  
   bool _isError = false;
+  bool _isInitialized = false;
 
   @override
   void initState() {
     super.initState();
-    
-    // 1. TEGEKA SCREEN KUTARYAMA (KEEP SCREEN ON)
-    WakelockPlus.enable(); 
-
-    initializePlayer();
-    _addViewer(); 
+    WakelockPlus.enable();
+    _initializeCorrectPlayer();
+    _addViewer();
   }
 
-  // --- LOGIC YO KUBARA ---
+  void _initializeCorrectPlayer() async {
+    if (widget.type == 'youtube' && widget.videoId != null) {
+      _youtubeController = YoutubePlayerController(
+        initialVideoId: widget.videoId!,
+        // ✅ KOSORA: Hindura 'isLive' kibe false kugira ngo YouTube idashyiraho kariya kantu k'umutuku
+        flags: const YoutubePlayerFlags(autoPlay: true, mute: false, isLive: false),
+      );
+      if (mounted) setState(() => _isInitialized = true);
+    } else if (widget.type == 'tv' && widget.streamUrl != null) {
+      try {
+        _videoPlayerController = VideoPlayerController.networkUrl(Uri.parse(widget.streamUrl!));
+        await _videoPlayerController!.initialize();
+        _chewieController = ChewieController(
+          videoPlayerController: _videoPlayerController!,
+          autoPlay: true,
+          // ✅ KOSORA: Hindura 'isLive' kibe false. Ibi bituma Chewie idandika ijambo "LIVE" imbere muri player
+          isLive: false, 
+          allowFullScreen: true,
+          errorBuilder: (context, errorMessage) => Center(
+            child: Text("Ikosa: $errorMessage", style: const TextStyle(color: Colors.white70)),
+          ),
+        );
+        if (mounted) setState(() => _isInitialized = true);
+      } catch (e) {
+        if (mounted) setState(() => _isError = true);
+      }
+    }
+  }
+
+  // ... (Gukomeza na _addViewer na _removeViewer nka mbere)
   void _addViewer() {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid != null) {
@@ -57,48 +90,14 @@ class _NetworkVideoPlayerScreenState extends State<NetworkVideoPlayerScreen> {
       ref.remove();
     }
   }
-  // -----------------------
-
-  Future<void> initializePlayer() async {
-    try {
-      _videoPlayerController = VideoPlayerController.networkUrl(Uri.parse(widget.streamUrl));
-      await _videoPlayerController.initialize();
-      
-      _chewieController = ChewieController(
-        videoPlayerController: _videoPlayerController,
-        autoPlay: true,
-        isLive: true,
-        allowFullScreen: true,
-        allowedScreenSleep: false, // Dushyizemo n'iyi nka backup
-        errorBuilder: (context, errorMessage) {
-          return Center(
-            child: Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Text(
-                "Ntabwo bikunze gufungura iyi TV.\n$errorMessage",
-                style: const TextStyle(color: Colors.white),
-                textAlign: TextAlign.center,
-              ),
-            ),
-          );
-        },
-      );
-      if (mounted) {
-        setState(() {});
-      }
-    } catch (e) {
-      if(mounted) setState(() => _isError = true);
-    }
-  }
 
   @override
   void dispose() {
-    // 2. REKURA SCREEN ISINZIRE IYO TUVUYEMO
     WakelockPlus.disable();
-    
-    _removeViewer(); 
-    _videoPlayerController.dispose();
+    _removeViewer();
+    _videoPlayerController?.dispose();
     _chewieController?.dispose();
+    _youtubeController?.dispose();
     super.dispose();
   }
 
@@ -107,41 +106,50 @@ class _NetworkVideoPlayerScreenState extends State<NetworkVideoPlayerScreen> {
     return Scaffold(
       backgroundColor: Colors.black,
       appBar: AppBar(
-        title: Text(widget.title, style: const TextStyle(color: Colors.white)),
         backgroundColor: Colors.transparent,
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new_rounded),
+          onPressed: () => Navigator.pop(context),
+        ),
       ),
       body: Center(
         child: Column(
-          mainAxisSize: MainAxisSize.min, 
-          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
           children: [
-            // 1. VIDEO PLAYER
+            Container(
+              margin: const EdgeInsets.only(bottom: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              decoration: BoxDecoration(
+                color: const Color(0xFF1A1A2E).withOpacity(0.9),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.white10),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // ✅ KOSORA: Icon iba ubururu aho kuba umutuku
+                  const Icon(Icons.ondemand_video_rounded, color: Colors.blueAccent, size: 20),
+                  const SizedBox(width: 10),
+                  Text(
+                    widget.title, 
+                    style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                  ),
+                ],
+              ),
+            ),
             _isError 
-                ? const Padding(
-                    padding: EdgeInsets.all(20.0),
-                    child: Text("Habaye ikosa.", style: TextStyle(color: Colors.white)),
-                  )
-                : _chewieController != null && _chewieController!.videoPlayerController.value.isInitialized
-                    ? AspectRatio(
-                        aspectRatio: 16 / 9,
-                        child: Chewie(controller: _chewieController!),
-                      )
-                    : Column(
-                        children: [
-                          const CircularProgressIndicator(color: Colors.red),
-                          const SizedBox(height: 20),
-                          Text(
-                            'Raba ${widget.title}...', 
-                            style: const TextStyle(color: Colors.white, fontSize: 18),
-                            textAlign: TextAlign.center,
+                ? const Text("Iyi video ntabwo irimo kwaka.", style: TextStyle(color: Colors.white54))
+                : !_isInitialized
+                    ? const CircularProgressIndicator(color: Colors.blueAccent)
+                    : widget.type == 'youtube'
+                        ? YoutubePlayer(controller: _youtubeController!, showVideoProgressIndicator: true)
+                        : AspectRatio(
+                            aspectRatio: 16 / 9,
+                            child: Chewie(controller: _chewieController!),
                           ),
-                        ],
-                      ),
-            
-            // 2. TICKER WIDGET
-            const TvTickerWidget(),
+            const Padding(padding: EdgeInsets.only(top: 8.0), child: TvTickerWidget()),
           ],
         ),
       ),

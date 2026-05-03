@@ -1,4 +1,4 @@
-// lib/star_day_screen.dart (VERSION NSHASHA KANDI YUZUYE - YAKOSOWE)
+// lib/star_day_screen.dart
 
 import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -9,6 +9,10 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:intl/date_symbol_data_local.dart';
+
+// NYAMURURU: Import za ngombwa kugira ngo tujye kuri Screen ya Video
+import 'package:jembe_talk/tangaza_star/tangaza_star_screen.dart';
+import 'package:jembe_talk/widgets/custom_page_route.dart';
 
 class StarDayScreen extends StatefulWidget {
   final String userId;
@@ -25,25 +29,21 @@ class _StarDayScreenState extends State<StarDayScreen> {
   final DatabaseHelper _dbHelper = DatabaseHelper.instance;
   List<Map<String, dynamic>> _starWinsToDisplay = [];
   bool _isLoading = true;
-  bool _isFirstLoad = true; // <<< Aka kazodufasha kumenya ko page igifungurwa
+  bool _isFirstLoad = true; 
 
   @override
   void initState() {
     super.initState();
     _timeString = _formatDateTime(DateTime.now());
     _timer = Timer.periodic(const Duration(seconds: 1), (Timer t) => _getTime());
-    _fetchAndDisplayWins(); 
   }
 
-  // <<< IYI NI YO MPINDUKA NYAMUKURU
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    // Iyi code izokora igihe cose ururimi ruhindutse
     final langProvider = Provider.of<LanguageProvider>(context);
     _initializeLocale(langProvider.currentLanguage);
 
-    // Iyi code ya _fetchAndDisplayWins itegerezwa gukora rimwe gusa
     if (_isFirstLoad) {
       _fetchAndDisplayWins();
       _isFirstLoad = false;
@@ -58,19 +58,15 @@ class _StarDayScreenState extends State<StarDayScreen> {
       case 'sw': locale = 'sw_TZ'; break;
       case 'ki':
       default:
-        // Ku Kirundi, 'intl' ntirukizi, rero dukoresha igifaransa nk'akarorero k'inyuma
-        // ariko imisi n'amezi tuzovyandika ukwavyo
         locale = 'fr_FR'; 
         break;
     }
-    // Turizera ko i initialization itasubira gukorwa ata mvo
     if (Intl.getCurrentLocale() != locale) {
        await initializeDateFormatting(locale, null);
     }
   }
 
   Future<void> _fetchAndDisplayWins() async {
-    // ... code ntihinduka ...
     if (!mounted) return;
     setState(() => _isLoading = true);
 
@@ -110,7 +106,7 @@ class _StarDayScreenState extends State<StarDayScreen> {
         await prefs.setInt('lastStarFetchTimestamp_${widget.userId}', DateTime.now().millisecondsSinceEpoch);
         
       } catch (e) {
-        print("Ikosa ryo kubona intsinzi za Star: $e");
+        debugPrint("Ikosa ryo kubona intsinzi za Star: $e");
       }
     }
 
@@ -143,9 +139,7 @@ class _StarDayScreenState extends State<StarDayScreen> {
     final DateTime now = DateTime.now();
     final String formattedDateTime = _formatDateTime(now);
     if (mounted) {
-      setState(() {
-        _timeString = formattedDateTime;
-      });
+      setState(() { _timeString = formattedDateTime; });
     }
   }
 
@@ -153,9 +147,18 @@ class _StarDayScreenState extends State<StarDayScreen> {
     return DateFormat('HH:mm:ss').format(dateTime);
   }
 
-  void _returnToMainScreenWithPostId(String postId) {
+  // =========================================================================
+  // FIX: NAVIGATION IFUNGUYE YA POST YAWE
+  // =========================================================================
+  void _goToTargetPost(String postId) {
     if(mounted) {
-      Navigator.of(context).pop(postId);
+      // Aho gu-pop, tugiye kujya kuri TangazaStarScreen Directly
+      Navigator.push(
+        context, 
+        CustomPageRoute(
+          child: TangazaStarScreen(targetPostId: postId)
+        )
+      );
     }
   }
   
@@ -247,7 +250,10 @@ class _StarDayScreenState extends State<StarDayScreen> {
     final lang = Provider.of<LanguageProvider>(context);
 
     return Scaffold(
-      appBar: AppBar(title: Text(lang.t('star_screen_title')), backgroundColor: const Color.fromARGB(255, 54, 136, 202)),
+      appBar: AppBar(
+        title: Text(lang.t('star_screen_title')), 
+        backgroundColor: const Color.fromARGB(255, 54, 136, 202)
+      ),
       body: ListView(
         children: [
           _buildCalendarView(context, lang),
@@ -269,7 +275,8 @@ class _StarDayScreenState extends State<StarDayScreen> {
                         borderRadius: BorderRadius.circular(12),
                         onTap: () {
                           if (postId != null) {
-                            _returnToMainScreenWithPostId(postId);
+                            // HANO: Ihamagara rishya rya Direct Navigation
+                            _goToTargetPost(postId);
                           }
                         },
                         child: Padding(
@@ -301,7 +308,6 @@ class _StarDayScreenState extends State<StarDayScreen> {
                                 const SizedBox(height: 8),
                                 Row(
                                   children: [
-                                    // IKI NI CYO GICE CYAKOSOWE (Expanded added)
                                     Expanded(
                                       child: Text(
                                         lang.t('star_win_tap_to_see'),

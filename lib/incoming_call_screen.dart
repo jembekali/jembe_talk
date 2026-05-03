@@ -1,8 +1,6 @@
-// lib/incoming_call_screen.dart
-
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:zego_uikit_prebuilt_call/zego_uikit_prebuilt_call.dart';
+// import 'package:zego_uikit_prebuilt_call/zego_uikit_prebuilt_call.dart'; // Yakuweho
 
 class IncomingCallScreen extends StatelessWidget {
   final String callID;
@@ -23,15 +21,11 @@ class IncomingCallScreen extends StatelessWidget {
       return const Scaffold(body: Center(child: Text("Nturi muri konte")));
     }
 
-    return ZegoUIKitPrebuiltCall(
-      appID: 1533659828,
-      appSign: "19e12086e41e57c8d9e26214152e93b455047b3b3a2777f98822080756775f0a",
-      userID: currentUser.uid,
-      userName: currentUser.email ?? "User",
-      callID: callID,
-      config: isVideoCall
-          ? ZegoUIKitPrebuiltCallConfig.oneOnOneVideoCall()
-          : ZegoUIKitPrebuiltCallConfig.oneOnOneVoiceCall(),
+    // Zego UIKit yakuweho muri V1
+    return Scaffold(
+      body: Center(
+        child: Text("Iihamagara rivuye kuri $callerName rirahagaritswe."),
+      ),
     );
   }
 }

@@ -1,8 +1,10 @@
+// lib/tangaza_star/profile_photo_settings_screen.dart
+
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:provider/provider.dart'; // Provider
-import 'package:jembe_talk/language_provider.dart'; // LanguageProvider
+import 'package:provider/provider.dart'; 
+import 'package:jembe_talk/language_provider.dart'; 
 import 'package:jembe_talk/services/database_helper.dart';
 
 class ProfilePhotoSettingsScreen extends StatefulWidget {
@@ -74,12 +76,12 @@ class _ProfilePhotoSettingsScreenState extends State<ProfilePhotoSettingsScreen>
 
   @override
   Widget build(BuildContext context) {
-    final lang = Provider.of<LanguageProvider>(context); // Provider
+    final lang = Provider.of<LanguageProvider>(context); 
 
     return Scaffold(
       backgroundColor: const Color(0xFF101D25),
       appBar: AppBar(
-        title: Text(lang.t('photo_privacy_title')), // "Ifoto ya Porofile"
+        title: Text(lang.t('photo_privacy_title')), 
         backgroundColor: const Color(0xFF202C33),
         actions: [
           if (_isSaving)
@@ -93,20 +95,20 @@ class _ProfilePhotoSettingsScreenState extends State<ProfilePhotoSettingsScreen>
           ? const Center(child: CircularProgressIndicator())
           : ListView(
               children: [
-                _buildSectionHeader(context, lang.t('photo_privacy_header')), // "Ninde ashobora..."
+                _buildSectionHeader(context, lang.t('photo_privacy_header')), 
                 _buildRadioOption(
                   context,
-                  title: lang.t('privacy_everyone'), // "Bose"
+                  title: lang.t('privacy_everyone'), 
                   value: 'everyone',
                 ),
                 _buildRadioOption(
                   context,
-                  title: lang.t('privacy_contacts'), // "Abo mfite gusa"
+                  title: lang.t('privacy_contacts'), 
                   value: 'my_contacts',
                 ),
                 _buildRadioOption(
                   context,
-                  title: lang.t('privacy_nobody'), // "Ntawe"
+                  title: lang.t('privacy_nobody'), 
                   value: 'nobody',
                 ),
               ],

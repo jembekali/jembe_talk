@@ -1,10 +1,41 @@
 {
+  "firestore": {
+    "indexes": "firestore.indexes.json"
+  },
   "hosting": {
-    "public": "public",
+    "site": "jembe-talk-1",
+    "public": "build/web",
     "ignore": [
       "firebase.json",
-      "**/.*",
       "**/node_modules/**"
+    ],
+    "rewrites": [
+      {
+        "source": "**",
+        "destination": "/index.html"
+      }
+    ],
+    "headers": [
+      {
+        "source": "/.well-known/assetlinks.json",
+        "headers": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ]
+      }
     ]
+  },
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "jembe-talk-1",
+          "appId": "1:93565364847:android:a89b2ce8fd9a720ad43b9a",
+          "fileOutput": "android/app/google-services.json"
+        }
+      }
+    }
   }
 }

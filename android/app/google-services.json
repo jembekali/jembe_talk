@@ -1,52 +1,104 @@
 {
   "project_info": {
-    "project_number": "296013157420",
-    "firebase_url": "https://jembe-talk-default-rtdb.firebaseio.com",
-    "project_id": "jembe-talk",
-    "storage_bucket": "jembe-talk.firebasestorage.app"
+    "project_number": "93565364847",
+    "firebase_url": "https://jembe-talk-1-default-rtdb.firebaseio.com",
+    "project_id": "jembe-talk-1",
+    "storage_bucket": "jembe-talk-1.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:296013157420:android:0ec480d1b7c8ffef5aed89",
+        "mobilesdk_app_id": "1:93565364847:android:23faf8dab0d9d4efd43b9a",
         "android_client_info": {
-          "package_name": "com.example.jembe_school"
+          "package_name": "com.example.app_admin_panel"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "93565364847-vf53vtm37etmcadishjdrunpogl2ucnm.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
-          "current_key": "AIzaSyD1WfnLT5CPhPV0zAwYgO1ShAMDTXanWyI"
-        },
-        {
-          "current_key": "AIzaSyDjOy1OTJoKg-Ts8QfCZm9cIWJRz5LXnS0"
+          "current_key": "AIzaSyDlYA92-pX-P5Q1b6ZtJHx56uui9qCvtKM"
         }
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "93565364847-vf53vtm37etmcadishjdrunpogl2ucnm.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "93565364847-44nivjk33abgbg8vq1kb9jhhrgvt4gkn.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.jembeTalk"
+              }
+            }
+          ]
         }
       }
     },
     {
       "client_info": {
-        "mobilesdk_app_id": "1:296013157420:android:5f7d20a6ab639c4e5aed89",
+        "mobilesdk_app_id": "1:93565364847:android:a89b2ce8fd9a720ad43b9a",
         "android_client_info": {
-          "package_name": "com.example.jembe_talk"
+          "package_name": "com.jembetalk.app"
         }
       },
-      "oauth_client": [],
-      "api_key": [
+      "oauth_client": [
         {
-          "current_key": "AIzaSyD1WfnLT5CPhPV0zAwYgO1ShAMDTXanWyI"
+          "client_id": "93565364847-a34liq8nveprmpcakqp8co769n59r7qu.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.jembetalk.app",
+            "certificate_hash": "9063b7a7daafceaa11d901509488ed1a7f602f28"
+          }
         },
         {
-          "current_key": "AIzaSyDjOy1OTJoKg-Ts8QfCZm9cIWJRz5LXnS0"
+          "client_id": "93565364847-duomn5nctqipi9oa8s0eh9or1e972pmc.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.jembetalk.app",
+            "certificate_hash": "41cdcd86e783b84129f64185d1e871d51d98ba37"
+          }
+        },
+        {
+          "client_id": "93565364847-u9etp12accrfj9vj752u3ppnj8u8q83n.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.jembetalk.app",
+            "certificate_hash": "66af693e78cba44f0db7373774af2c752f4e0d6c"
+          }
+        },
+        {
+          "client_id": "93565364847-vf53vtm37etmcadishjdrunpogl2ucnm.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDlYA92-pX-P5Q1b6ZtJHx56uui9qCvtKM"
         }
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "93565364847-vf53vtm37etmcadishjdrunpogl2ucnm.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "93565364847-44nivjk33abgbg8vq1kb9jhhrgvt4gkn.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.jembeTalk"
+              }
+            }
+          ]
         }
       }
     }

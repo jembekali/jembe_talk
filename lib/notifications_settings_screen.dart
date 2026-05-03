@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:audioplayers/audioplayers.dart';
-import 'package:provider/provider.dart'; // Provider
-import 'package:jembe_talk/language_provider.dart'; // LanguageProvider
+import 'package:just_audio/just_audio.dart'; // Twakoresheje iyi kuko yo ihari
+import 'package:provider/provider.dart'; 
+import 'package:jembe_talk/language_provider.dart'; 
 import 'package:shared_preferences/shared_preferences.dart';
 
 class NotificationSettingsScreen extends StatefulWidget {
@@ -13,9 +13,9 @@ class NotificationSettingsScreen extends StatefulWidget {
 class _NotificationSettingsScreenState extends State<NotificationSettingsScreen> {
   bool _conversationTones = true;
   String _messageTone = "Jembe Tone";
-  String _messageVibrate = "Ubusanzwe"; // Ibi bizahinduka kuri UI
+  String _messageVibrate = "Ubusanzwe"; 
   String _callTone = "Umuduri"; 
-  String _callVibrate = "Nde-nde"; // Ibi bizahinduka kuri UI
+  String _callVibrate = "Nde-nde"; 
   bool _isLoading = true;
 
   @override
@@ -38,11 +38,7 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
     }
   }
 
-  Future<void> _toggleConversationTones(bool value) async {
-    final prefs = await SharedPreferences.getInstance();
-    setState(() => _conversationTones = value);
-    await prefs.setBool('notifications_tones_enabled', value);
-  }
+  // ... (Ibindi bice bya kodi biguma uko byari biri kugeza kuri ToneSelectionDialog)
 
   void _selectTone(bool isForCall) async {
     final selectedTone = await showDialog<String>(context: context, builder: (context) => const ToneSelectionDialog());
@@ -81,7 +77,6 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
     final theme = Theme.of(context);
     final lang = Provider.of<LanguageProvider>(context);
 
-    // Guhindura amazina ya vibration bijyanye n'ururimi kuri display gusa
     String getLocalizedVibrate(String mode) {
       if (mode == 'Ibisanzwe' || mode == 'Default') return lang.t('vib_default');
       if (mode == 'Ngufi' || mode == 'Short') return lang.t('vib_short');
@@ -99,48 +94,30 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
             title: Text(lang.t('notif_conv_tones'), style: TextStyle(color: theme.textTheme.bodyLarge?.color)), 
             subtitle: Text(lang.t('notif_conv_tones_sub'), style: TextStyle(color: theme.textTheme.bodyMedium?.color)), 
             value: _conversationTones, 
-            onChanged: _toggleConversationTones, 
+            onChanged: (v) => _toggleConversationTones(v), 
             activeColor: theme.colorScheme.secondary, 
             secondary: Icon(Icons.music_note_outlined, color: theme.textTheme.bodyMedium?.color)
           ),
           Divider(color: theme.dividerColor.withAlpha(80), height: 1), 
           const SizedBox(height: 10),
           
-          _buildSectionHeader(context, lang.t('notif_header_msg')), // "UBUTUMWA"
-          _buildSettingsItem(
-            context, 
-            icon: Icons.notifications_outlined, 
-            title: lang.t('notif_msg_tone'), // "Ijwi ry'ubutumwa"
-            subtitle: _messageTone, // Izina ry'ijwi riguma uko riri
-            onTap: () => _selectTone(false)
-          ),
-          _buildSettingsItem(
-            context, 
-            icon: Icons.vibration_outlined, 
-            title: lang.t('notif_vibrate'), // "Kunyiganyiza"
-            subtitle: getLocalizedVibrate(_messageVibrate), 
-            onTap: () => _selectVibrateMode(false)
-          ),
+          _buildSectionHeader(context, lang.t('notif_header_msg')), 
+          _buildSettingsItem(context, icon: Icons.notifications_outlined, title: lang.t('notif_msg_tone'), subtitle: _messageTone, onTap: () => _selectTone(false)),
+          _buildSettingsItem(context, icon: Icons.vibration_outlined, title: lang.t('notif_vibrate'), subtitle: getLocalizedVibrate(_messageVibrate), onTap: () => _selectVibrateMode(false)),
           
           const SizedBox(height: 10),
-          _buildSectionHeader(context, lang.t('notif_header_call')), // "AMAHAMAGARA"
-          _buildSettingsItem(
-            context, 
-            icon: Icons.ring_volume_outlined, 
-            title: lang.t('notif_call_tone'), // "Ijwi ry'ihamagara"
-            subtitle: _callTone, 
-            onTap: () => _selectTone(true)
-          ),
-          _buildSettingsItem(
-            context, 
-            icon: Icons.vibration_outlined, 
-            title: lang.t('notif_vibrate'), 
-            subtitle: getLocalizedVibrate(_callVibrate), 
-            onTap: () => _selectVibrateMode(true)
-          ),
+          _buildSectionHeader(context, lang.t('notif_header_call')), 
+          _buildSettingsItem(context, icon: Icons.ring_volume_outlined, title: lang.t('notif_call_tone'), subtitle: _callTone, onTap: () => _selectTone(true)),
+          _buildSettingsItem(context, icon: Icons.vibration_outlined, title: lang.t('notif_vibrate'), subtitle: getLocalizedVibrate(_callVibrate), onTap: () => _selectVibrateMode(true)),
         ],
       ),
     );
+  }
+
+  Future<void> _toggleConversationTones(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() => _conversationTones = value);
+    await prefs.setBool('notifications_tones_enabled', value);
   }
 
   Widget _buildSectionHeader(BuildContext context, String title) {
@@ -159,9 +136,6 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
   }
 }
 
-// ==========================================================
-// DIALOGS ZIFITE LANGUAGE PROVIDER
-// ==========================================================
 class ToneSelectionDialog extends StatefulWidget {
   const ToneSelectionDialog({super.key});
   @override
@@ -169,30 +143,25 @@ class ToneSelectionDialog extends StatefulWidget {
 }
 
 class _ToneSelectionDialogState extends State<ToneSelectionDialog> {
-  final AudioPlayer _audioPlayer = AudioPlayer();
-  final Map<String, String> _sounds = {'Jembe Tone': 'jembe_tone.mp3', 'Chime': 'chime.mp3', 'Come To Me': 'come_to_me.mp3', 'Furaha': 'furaha.mp3', 'Good Morning': 'good_morning.mp3', 'Guitar': 'guitar.mp3', 'Indingiti': 'indingiti.mp3', 'Ntacobitwaye': 'ntacobitwaye.mp3', 'Pawan': 'pawan.mp3', 'Piano': 'piano.mp3', 'Tweet': 'tweet.mp3', 'Umuduri': 'umuduri.mp3', 'Nta jwi': 'none'};
+  final AudioPlayer _player = AudioPlayer();
+  final Map<String, String> _sounds = {'Jembe Tone': 'jembe_tone.mp3',  'Come To Me': 'come_to_me.mp3', 'Guitar': 'guitar.mp3', 'Indingiti': 'indingiti.mp3', 'Ntacobitwaye': 'ntacobitwaye.mp3', 'Mama': 'pawan.mp3', 'Piano': 'piano.mp3', 'Umuduri': 'umuduri.mp3', 'Nta jwi': 'none'};
   String? _currentlyPlaying;
 
   @override
   void dispose() {
-    _audioPlayer.dispose();
+    _player.dispose();
     super.dispose();
   }
 
   void _playSound(String displayName, String fileName) async {
-    if (_currentlyPlaying != null) await _audioPlayer.stop();
+    if (fileName == 'none') return;
     setState(() => _currentlyPlaying = displayName);
-    if (fileName != 'none') {
-      try {
-        await _audioPlayer.play(AssetSource('audio/$fileName'));
-        _audioPlayer.onPlayerComplete.first.then((_) {
-          if (mounted) setState(() => _currentlyPlaying = null);
-        });
-      } catch (e) {
-        if (mounted) setState(() => _currentlyPlaying = null);
-      }
-    } else {
-      await Future.delayed(const Duration(milliseconds: 500));
+    try {
+      await _player.setAsset('assets/audio/$fileName');
+      await _player.play();
+    } catch (e) {
+      debugPrint("Error playing audio: $e");
+    } finally {
       if (mounted) setState(() => _currentlyPlaying = null);
     }
   }
@@ -201,7 +170,7 @@ class _ToneSelectionDialogState extends State<ToneSelectionDialog> {
   Widget build(BuildContext context) {
     final lang = Provider.of<LanguageProvider>(context);
     return AlertDialog(
-      title: Text(lang.t('notif_dialog_tone_title')), // "Hitamwo ijwi"
+      title: Text(lang.t('notif_dialog_tone_title')), 
       content: SizedBox(
         width: double.maxFinite,
         child: ListView(
@@ -226,31 +195,12 @@ class VibrateSelectionDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final lang = Provider.of<LanguageProvider>(context);
-    // Hano dukoresha keys kugira tubike (values), ariko tugaragaza amazina (labels)
-    final Map<String, String> modes = {
-      'Ibisanzwe': lang.t('vib_default'),
-      'Ngufi': lang.t('vib_short'),
-      'Nde-nde': lang.t('vib_long'),
-      'Ntibikogwa': lang.t('vib_off'),
-    };
-
+    final Map<String, String> modes = {'Ibisanzwe': lang.t('vib_default'), 'Ngufi': lang.t('vib_short'), 'Nde-nde': lang.t('vib_long'), 'Ntibikogwa': lang.t('vib_off')};
     return AlertDialog(
-      title: Text(lang.t('notif_dialog_vibrate_title')), // "Hitamwo uko Vibration ikora"
-      content: SizedBox(
-        width: double.maxFinite, 
-        child: ListView.builder(
-          shrinkWrap: true, 
-          itemCount: modes.length, 
-          itemBuilder: (context, index) {
-            String key = modes.keys.elementAt(index);
-            String label = modes.values.elementAt(index);
-            return ListTile(
-              title: Text(label), 
-              onTap: () => Navigator.of(context).pop(key) // Tubika Key (Kirundi original) kugira code itavangirwa
-            );
-          }
-        )
-      ),
+      title: Text(lang.t('notif_dialog_vibrate_title')), 
+      content: SizedBox(width: double.maxFinite, child: ListView.builder(shrinkWrap: true, itemCount: modes.length, itemBuilder: (context, index) {
+        return ListTile(title: Text(modes.values.elementAt(index)), onTap: () => Navigator.of(context).pop(modes.keys.elementAt(index)));
+      })),
     );
   }
 }

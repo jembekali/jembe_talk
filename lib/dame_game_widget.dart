@@ -1,13 +1,75 @@
-// lib/dame_game_widget.dart (VERSION 14.1: DISTINCT KINGS VISUALS)
+// lib/dame_game_widget.dart (VERSION 16.2 - FIXED LOCALIZATION & LAYOUT)
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:provider/provider.dart';
 import 'package:jembe_talk/language_provider.dart';
 import 'dame_game_logic.dart';
 
+// ===========================================================================
+// 1. TICKER WIDGET (Slower flow & distinct space)
+// ===========================================================================
+class _DameTickerWidget extends StatefulWidget {
+  const _DameTickerWidget();
+  @override
+  State<_DameTickerWidget> createState() => _DameTickerWidgetState();
+}
+
+class _DameTickerWidgetState extends State<_DameTickerWidget> with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  final DatabaseReference _tickerRef = FirebaseDatabase.instance.ref('dame_ticker');
+
+  @override
+  void initState() {
+    super.initState();
+    // ✅ SPEED: 45 seconds for a very calm reading experience
+    _controller = AnimationController(duration: const Duration(seconds: 45), vsync: this)..repeat();
+  }
+
+  @override
+  void dispose() { _controller.dispose(); super.dispose(); }
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder(
+      stream: _tickerRef.onValue,
+      builder: (context, AsyncSnapshot<DatabaseEvent> snapshot) {
+        if (!snapshot.hasData || snapshot.data!.snapshot.value == null) return const SizedBox.shrink();
+        final data = snapshot.data!.snapshot.value as Map;
+        if (!(data['isActive'] ?? false)) return const SizedBox.shrink();
+        final String message = data['message'] ?? "";
+        if (message.isEmpty) return const SizedBox.shrink();
+
+        return LayoutBuilder(builder: (context, constraints) {
+          double screenWidth = constraints.maxWidth;
+          return Container(
+            height: 24, width: double.infinity, clipBehavior: Clip.hardEdge,
+            decoration: BoxDecoration(
+              color: const Color(0xFF1A0A26),
+              border: Border(bottom: BorderSide(color: Colors.purple.shade900, width: 0.8))
+            ),
+            child: AnimatedBuilder(
+              animation: _controller,
+              builder: (context, child) {
+                double xPos = screenWidth - (_controller.value * (screenWidth + 1500));
+                return Stack(children: [
+                  Positioned(left: xPos, top: 0, bottom: 0, child: Center(child: Text(message, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11, letterSpacing: 0.5)))),
+                ]);
+              },
+            ),
+          );
+        });
+      },
+    );
+  }
+}
+
+// ===========================================================================
+// 2. PIECE WIDGET (Premium 3D Visuals preserved)
+// ===========================================================================
 class DamePieceWidget extends StatelessWidget {
   final DamePiece piece;
   final double squareSize;
@@ -15,132 +77,45 @@ class DamePieceWidget extends StatelessWidget {
   final bool mustPlay;
   final VoidCallback? onTap;
 
-  const DamePieceWidget({
-    required Key key,
-    required this.piece,
-    required this.squareSize,
-    this.isSelected = false,
-    this.mustPlay = false,
-    this.onTap,
-  }) : super(key: key);
+  const DamePieceWidget({required Key key, required this.piece, required this.squareSize, this.isSelected = false, this.mustPlay = false, this.onTap}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
     final bool isPlayer1 = piece.player == 1;
-
-    // Player 1: Light Pieces (Wheat/Beige)
-    final lightPiece = BoxDecoration(
-      shape: BoxShape.circle,
-      border: Border.all(
-        color: mustPlay ? Colors.red.shade900 : (isSelected ? Colors.green : Colors.black54),
-        width: isSelected || mustPlay ? 3.5 : 2,
-      ),
-      gradient: const RadialGradient(
-        colors: [Color(0xFFF5DEB3), Color(0xFFDEB887)], // Wheat -> BurlyWood
-        center: Alignment(-0.3, -0.3),
-        radius: 0.8,
-      ),
-      boxShadow: [
-        BoxShadow(
-          color: Colors.black.withOpacity(0.4),
-          blurRadius: 3,
-          offset: const Offset(2, 2),
-        )
-      ]
-    );
-
-    // Player 2: Dark Pieces (Brown)
-    final darkPiece = BoxDecoration(
-      shape: BoxShape.circle,
-      border: Border.all(
-        color: mustPlay ? Colors.red.shade900 : (isSelected ? Colors.green : Colors.black54),
-        width: isSelected || mustPlay ? 3.5 : 2,
-      ),
-       gradient: const RadialGradient(
-        colors: [Color(0xFF8B5A2B), Color(0xFF654321)], // Dark Tan -> Dark Brown
-        center: Alignment(-0.3, -0.3),
-        radius: 0.8,
-      ),
-      boxShadow: [
-        BoxShadow(
-          color: Colors.black.withOpacity(0.4),
-          blurRadius: 3,
-          offset: const Offset(2, 2),
-        )
-      ]
-    );
+    final lightPieceGradient = const RadialGradient(colors: [Color(0xFFF5DEB3), Color(0xFFDEB887)], center: Alignment(-0.3, -0.3), radius: 0.8);
+    final darkPieceGradient = const RadialGradient(colors: [Color(0xFF8B5A2B), Color(0xFF654321)], center: Alignment(-0.3, -0.3), radius: 0.8);
 
     return GestureDetector(
       onTap: onTap,
-      child: SizedBox(
-        width: squareSize,
-        height: squareSize,
-        child: Padding(
-          padding: const EdgeInsets.all(4.0),
-          child: Container(
-            decoration: isPlayer1 ? lightPiece : darkPiece,
-            child: Stack(
-              alignment: Alignment.center,
-              children: [
-                // LOGIC NSHASHA Y'ABAMI (KINGS)
-                if (piece.type == DamePieceType.king)
-                  Icon(
-                    Icons.star_rounded,
-                    // Player 1 (Light): Inyenyeri Y'UMWERU (nkuko wabisabye)
-                    // Player 2 (Dark): Inyenyeri ya ZAHABU/UMUKARA (kugira ngo igaragare)
-                    color: isPlayer1 ? Colors.white : Colors.amber,
-                    size: squareSize * 0.7,
-                    shadows: [
-                      // Shyiraho igicucu (Shadow) kugira ngo umweru ugaragare ku ibara ryerurutse
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.6),
-                        blurRadius: 4,
-                        offset: const Offset(0, 1),
-                      )
-                    ],
-                  ),
-                  
-                // Optional: Utumenyetso duto twerekana ko ari King niba inyenyeri idahagije
-                if (piece.type == DamePieceType.king)
-                   Positioned(
-                     bottom: 4,
-                     child: Container(
-                       width: squareSize * 0.3,
-                       height: 2,
-                       color: isPlayer1 ? Colors.black45 : Colors.white54,
-                     ),
-                   )
-              ],
-            ),
+      child: Padding(
+        padding: const EdgeInsets.all(4.0),
+        child: Container(
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            border: Border.all(color: mustPlay ? Colors.red.shade900 : (isSelected ? Colors.yellowAccent : Colors.black54), width: isSelected || mustPlay ? 3.5 : 2),
+            gradient: isPlayer1 ? lightPieceGradient : darkPieceGradient,
+            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.4), blurRadius: 3, offset: const Offset(2, 2))]
           ),
+          child: Stack(alignment: Alignment.center, children: [
+            if (piece.type == DamePieceType.king) Icon(Icons.star, color: isPlayer1 ? Colors.black.withOpacity(0.6) : Colors.white.withOpacity(0.8), size: squareSize * 0.6),
+          ]),
         ),
       ),
     );
   }
 }
 
+// ===========================================================================
+// 3. MAIN GAME WIDGET
+// ===========================================================================
 class DameGameWidget extends StatefulWidget {
   final String chatRoomID;
   final Map<String, dynamic> gameData;
   final String? opponentDisplayName;
-  
-  final bool isInvitation;
-  final bool isWaiting;
-  final VoidCallback? onSendInvitation;
-  final VoidCallback? onCancel;
-  final VoidCallback? onGameStopped; 
+  final bool isInvitation, isWaiting;
+  final VoidCallback? onSendInvitation, onCancel, onGameStopped;
 
-  const DameGameWidget({
-    super.key,
-    required this.chatRoomID,
-    required this.gameData,
-    this.opponentDisplayName,
-    this.isInvitation = false,
-    this.isWaiting = false,
-    this.onSendInvitation,
-    this.onCancel,
-    this.onGameStopped, 
-  });
+  const DameGameWidget({super.key, required this.chatRoomID, required this.gameData, this.opponentDisplayName, this.isInvitation = false, this.isWaiting = false, this.onSendInvitation, this.onCancel, this.onGameStopped});
 
   @override
   State<DameGameWidget> createState() => _DameGameWidgetState();
@@ -149,649 +124,219 @@ class DameGameWidget extends StatefulWidget {
 class _DameGameWidgetState extends State<DameGameWidget> with SingleTickerProviderStateMixin {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
-
   late DameGameLogic _gameLogic;
-  bool _isPlayer1 = true;
-  DameMove? _lastMove;
-  bool _isSubmittingMove = false;
-
-  late AudioPlayer _movePlayer, _capturePlayer, _promotePlayer, _winPlayer, _losePlayer;
-
-  late AnimationController _animationController;
-  late Animation<Offset> _animation;
-  DamePiece? _movingPiece;
-  Offset? _movingPieceFromOffset;
-  bool _isAnimating = false;
-  DameMove? _moveForAnimation;
-
-  bool _hasShownGameEndDialog = false;
+  bool _isPlayer1 = true, _isSubmittingMove = false, _isAnimating = false, _hasShownEndDialog = false;
+  
+  late AudioPlayer _moveP, _capP, _proP, _winP, _loseP;
+  late AnimationController _animCtrl;
+  late Animation<Offset> _anim;
+  DamePiece? _movP; Offset? _movStart; DameMove? _movMove;
 
   @override
   void initState() {
     super.initState();
-    _initializeGame();
-    _checkForGameEnd();
-
-    _movePlayer = AudioPlayer(); _capturePlayer = AudioPlayer(); _promotePlayer = AudioPlayer();
-    _winPlayer = AudioPlayer(); _losePlayer = AudioPlayer();
+    _initGame();
+    _moveP = AudioPlayer(); _capP = AudioPlayer(); _proP = AudioPlayer(); _winP = AudioPlayer(); _loseP = AudioPlayer();
     _loadSounds();
+    _animCtrl = AnimationController(duration: const Duration(milliseconds: 500), vsync: this);
+    _animCtrl.addStatusListener((s) { if (s == AnimationStatus.completed) _processAfterAnim(); });
+  }
 
-    _animationController = AnimationController(
-      duration: const Duration(milliseconds: 500),
-      vsync: this,
-    );
-    
-    _animationController.addStatusListener((status) {
-      if (status == AnimationStatus.completed) {
-        _processMoveAfterAnimation();
-      }
-    });
+  void _initGame() {
+    if (!widget.isInvitation) _isPlayer1 = widget.gameData['player1Id'] == _auth.currentUser!.uid;
+    _gameLogic = DameGameLogic(myPlayerNumber: _isPlayer1 ? 1 : 2, boardSize: 10);
+    final board = widget.gameData['boardState'] ?? widget.gameData['board'];
+    if (board != null) _gameLogic.initializeBoard(board);
+    _checkEnd();
   }
 
   Future<void> _loadSounds() async {
-    final lang = Provider.of<LanguageProvider>(context, listen: false);
     try {
-      await _movePlayer.setAsset('assets/audio/move.mp3');
-      await _capturePlayer.setAsset('assets/audio/capture.mp3');
-      await _promotePlayer.setAsset('assets/audio/promote.mp3');
-      await _winPlayer.setAsset('assets/audio/win.mp3');
-      await _losePlayer.setAsset('assets/audio/lose.mp3');
-    } catch (e) {
-      debugPrint("${lang.t('dame_sound_error')}: $e");
-    }
-  }
-
-  void _playSound(AudioPlayer player) {
-    if (player.playing) {
-      player.stop();
-    }
-    player.seek(Duration.zero);
-    player.play();
+      await _moveP.setAsset('assets/audio/move.mp3'); await _capP.setAsset('assets/audio/capture.mp3');
+      await _proP.setAsset('assets/audio/promote.mp3'); await _winP.setAsset('assets/audio/win.mp3');
+      await _loseP.setAsset('assets/audio/lose.mp3');
+    } catch (_) {}
   }
 
   @override
-  void dispose() {
-    _animationController.dispose();
-    _movePlayer.dispose(); _capturePlayer.dispose(); _promotePlayer.dispose();
-    _winPlayer.dispose(); _losePlayer.dispose();
-    super.dispose();
+  void didUpdateWidget(DameGameWidget old) {
+    super.didUpdateWidget(old);
+    if (widget.gameData != old.gameData) { setState(() { _isSubmittingMove = false; _initGame(); }); }
   }
 
-  @override
-  void didUpdateWidget(covariant DameGameWidget oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    
-    if (widget.gameData['status'] == 'active' && _hasShownGameEndDialog) {
-      _hasShownGameEndDialog = false;
-    }
-
-    if (widget.gameData != oldWidget.gameData) {
-      if (mounted) setState(() {
-        _isSubmittingMove = false;
-        _initializeGame();
-      });
-      _checkForGameEnd();
-    }
-  }
-
-  void _initializeGame() {
-    if (!widget.isInvitation) {
-      _isPlayer1 = widget.gameData['player1Id'] == _auth.currentUser!.uid;
-    }
-    _gameLogic = DameGameLogic(myPlayerNumber: _isPlayer1 ? 1 : 2, boardSize: 10);
-    final boardData = widget.gameData['boardState'] ?? widget.gameData['board']; 
-    if(boardData != null) {
-        _gameLogic.initializeBoard(boardData);
-    }
-  }
-
-  void _checkForGameEnd() {
-    if (_hasShownGameEndDialog) return;
-
+  void _checkEnd() {
+    if (_hasShownEndDialog || widget.isInvitation || widget.gameData['status'] != 'finished') return;
+    _hasShownEndDialog = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || ModalRoute.of(context)?.isCurrent != true) return;
-      if (widget.isInvitation || widget.gameData['status'] != 'finished') return;
-
-      _hasShownGameEndDialog = true;
-
       final lang = Provider.of<LanguageProvider>(context, listen: false);
-      final winnerId = widget.gameData['winnerId'];
-      final reason = widget.gameData['endReason'] ?? lang.t('dame_game_finished');
-      final amIWinner = winnerId == _auth.currentUser!.uid;
-      
-      String dialogTitle;
-      
-      if (winnerId == null) {
-        dialogTitle = lang.t('dame_game_stopped');
-      } else {
-        if (amIWinner) {
-          dialogTitle = lang.t('dame_you_won');
-          _playSound(_winPlayer);
-        } else {
-          dialogTitle = lang.t('dame_you_lost');
-          _playSound(_losePlayer);
-        }
-      }
-      
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (context) => AlertDialog(
-          title: Text(dialogTitle),
-          content: Text(reason),
-          actions: [
-            TextButton(
-              child: Text(lang.t('btn_ok')),
-              onPressed: () {
-                Navigator.of(context).pop();
-                if (amIWinner) {
-                   _resetGameForNewMatch();
-                } 
-              },
-            ),
-          ],
-        ),
-      );
+      final winId = widget.gameData['winnerId'];
+      final amIWin = winId == _auth.currentUser!.uid;
+      if (winId != null) { if (amIWin) _winP.play(); else _loseP.play(); }
+      showDialog(context: context, barrierDismissible: false, builder: (c) => AlertDialog(
+        title: Text(winId == null ? lang.t('dame_game_stopped') : (amIWin ? lang.t('dame_you_won') : lang.t('dame_you_lost'))),
+        content: Text(widget.gameData['endReason'] ?? ""),
+        actions: [TextButton(child: Text(lang.t('btn_ok')), onPressed: () { Navigator.pop(c); _hasShownEndDialog = false; if (amIWin) _resetGameForMatch(); })],
+      ));
     });
   }
 
   bool get _isMyTurn => !_isSubmittingMove && !_isAnimating && !widget.isInvitation && widget.gameData['turn'] == _auth.currentUser!.uid && widget.gameData['status'] == 'active';
 
-  void _handleTap(int tappedRow, int tappedCol) {
+  void _onTap(int r, int c) {
     if (!_isMyTurn) return;
-
-    int actualRow = _isPlayer1 ? tappedRow : 9 - tappedRow;
-    int actualCol = _isPlayer1 ? tappedCol : 9 - tappedCol;
-
-    final move = _gameLogic.getMoveTo(actualRow, actualCol);
-    
-    if (move != null) {
-      if(mounted) setState(() {
-        _moveForAnimation = move;
-        _movingPiece = _gameLogic.board[move.fromRow][move.fromCol]!.copy();
-        
-        final screenWidth = MediaQuery.of(context).size.width;
-        final boardMargin = 8.0;
-        final boardSize = screenWidth - (boardMargin * 2);
-        final squareSize = boardSize / 10;
-        
-        final visualFromRow = _isPlayer1 ? move.fromRow : 9 - move.fromRow;
-        final visualFromCol = _isPlayer1 ? move.fromCol : 9 - move.fromCol;
-        final visualToRow = _isPlayer1 ? move.toRow : 9 - move.toRow;
-        final visualToCol = _isPlayer1 ? move.toCol : 9 - move.toCol;
-        
-        _movingPieceFromOffset = Offset(visualFromCol * squareSize, visualFromRow * squareSize);
-        final toOffset = Offset(visualToCol * squareSize, visualToRow * squareSize);
-        
-        _animation = Tween<Offset>(begin: Offset.zero, end: toOffset - _movingPieceFromOffset!).animate(
-          CurvedAnimation(parent: _animationController, curve: Curves.easeInOut)
-        );
-        
-        _isAnimating = true;
-        _animationController.forward(from: 0.0);
+    int ar = _isPlayer1 ? r : 9 - r, ac = _isPlayer1 ? c : 9 - c;
+    final m = _gameLogic.getMoveTo(ar, ac);
+    if (m != null) {
+      setState(() {
+        _movMove = m; _movP = _gameLogic.board[m.fromRow][m.fromCol]!.copy();
+        double sz = (MediaQuery.of(context).size.width - 16) / 10;
+        int vfr = _isPlayer1 ? m.fromRow : 9 - m.fromRow, vfc = _isPlayer1 ? m.fromCol : 9 - m.fromCol;
+        int vtr = _isPlayer1 ? m.toRow : 9 - m.toRow, vtc = _isPlayer1 ? m.toCol : 9 - m.toCol;
+        _movStart = Offset(vfc * sz, vfr * sz);
+        _anim = Tween<Offset>(begin: Offset.zero, end: Offset(vtc * sz, vtr * sz) - _movStart!).animate(CurvedAnimation(parent: _animCtrl, curve: Curves.easeInOut));
+        _isAnimating = true; _animCtrl.forward(from: 0.0);
       });
-
-    } else {
-       _gameLogic.handleTap(actualRow, actualCol);
-       if(mounted) setState(() {});
-    }
+    } else { _gameLogic.handleTap(ar, ac); setState(() {}); }
   }
 
-  void _processMoveAfterAnimation() {
-    if (_moveForAnimation == null) return;
-    
-    final move = _moveForAnimation!;
-    int actualRow = move.toRow;
-    int actualCol = move.toCol;
-    
-    final wasCapture = move.isCapture;
-    final piece = _gameLogic.board[move.fromRow][move.fromCol]!;
-
-    final bool willBecomeKing = (piece.type == DamePieceType.man) && 
-                             ((_gameLogic.myPlayerNumber == 1 && move.toRow == 0) || 
-                              (_gameLogic.myPlayerNumber == 2 && move.toRow == 9));
-
-    bool turnEnded = _gameLogic.handleTap(actualRow, actualCol);
-
-    if (willBecomeKing) {
-      _playSound(_promotePlayer);
-    } else if (wasCapture) {
-      _playSound(_capturePlayer);
-    } else {
-      _playSound(_movePlayer);
-    }
-    
-    if(mounted) setState(() {
-      _lastMove = move;
-      _isAnimating = false;
-      _movingPiece = null;
-      _moveForAnimation = null;
-    });
-
-    if (turnEnded) {
-      _endTurn();
-    }
+  void _processAfterAnim() {
+    if (_movMove == null) return;
+    final m = _movMove!; final wasCap = m.isCapture;
+    final isKing = (_movP!.type == DamePieceType.man) && ((_gameLogic.myPlayerNumber == 1 && m.toRow == 0) || (_gameLogic.myPlayerNumber == 2 && m.toRow == 9));
+    bool end = _gameLogic.handleTap(m.toRow, m.toCol);
+    if (isKing) _proP.play(); else if (wasCap) _capP.play(); else _moveP.play();
+    setState(() { _isAnimating = false; _movP = null; _movMove = null; });
+    if (end) _submitTurn();
   }
 
-  Future<void> _endTurn() async {
+  Future<void> _submitTurn() async {
+    setState(() => _isSubmittingMove = true);
     final lang = Provider.of<LanguageProvider>(context, listen: false);
-    if(mounted) setState(() { _isSubmittingMove = true; });
-    final newBoard = _gameLogic.board;
-    final nextPlayerId = widget.gameData['turn'] == widget.gameData['player1Id'] ? widget.gameData['player2Id'] : widget.gameData['player1Id'];
-    final int nextPlayerNumber = (nextPlayerId == widget.gameData['player1Id']) ? 1 : 2;
-
-    DameGameLogic tempLogic = DameGameLogic(myPlayerNumber: nextPlayerNumber, boardSize: 10);
-    final List<dynamic> boardAsListOfMaps = newBoard.map((row) => row.map((piece) => piece == null ? null : {'player': piece.player, 'type': piece.type.name}).toList()).toList();
-    tempLogic.initializeBoard(boardAsListOfMaps);
-    if (!tempLogic.hasAnyValidMoves(nextPlayerNumber)) {
-      await _declareWinner(_auth.currentUser!.uid, lang.t('dame_win_reason_no_moves'));
-    } else {
-      await _updateGameInFirestore(newBoard);
+    final nextId = widget.gameData['turn'] == widget.gameData['player1Id'] ? widget.gameData['player2Id'] : widget.gameData['player1Id'];
+    DameGameLogic temp = DameGameLogic(myPlayerNumber: (nextId == widget.gameData['player1Id'] ? 1 : 2), boardSize: 10);
+    temp.initializeBoard(_gameLogic.board.map((r) => r.map((p) => p == null ? null : {'player': p.player, 'type': p.type.name}).toList()).toList());
+    if (!temp.hasAnyValidMoves(temp.myPlayerNumber)) { _declareWinner(_auth.currentUser!.uid, lang.t('dame_win_reason_no_moves')); }
+    else {
+       final boardMaps = {};
+       for (int i = 0; i < 10; i++) boardMaps[i.toString()] = _gameLogic.board[i].map((p) => p == null ? null : {'player': p.player, 'type': p.type.name}).toList();
+       await _firestore.collection('games').doc(widget.chatRoomID).update({'boardState': boardMaps, 'turn': nextId});
     }
   }
 
-  Future<void> _handleResign() async {
-    final lang = Provider.of<LanguageProvider>(context, listen: false);
-    if (widget.isInvitation) return;
-    final bool? confirm = await showDialog<bool>(
-      context: context,
-      builder: (BuildContext context) => AlertDialog(
-        title: Text(lang.t('dame_resign_title')),
-        content: Text(lang.t('dame_resign_body')),
-        actions: <Widget>[
-          TextButton( child: Text(lang.t('dialog_no')), onPressed: () => Navigator.of(context).pop(false), ),
-          TextButton( child: Text(lang.t('dame_resign_confirm')), onPressed: () => Navigator.of(context).pop(true), style: TextButton.styleFrom(foregroundColor: Colors.red), ),
-        ],
-      ),
-    );
-    if (confirm == true) {
-      final opponentId = _isPlayer1 ? widget.gameData['player2Id'] : widget.gameData['player1Id'];
-      await _declareWinner(opponentId, lang.t('dame_win_reason_resign'));
-    }
-  }
-  
-  Future<void> _resetGameForNewMatch() async {
-    final initialBoard = List.generate(10, (row) {
-      return List.generate(10, (col) {
-        if ((row + col) % 2 != 0) {
-          if (row < 4) return {'player': 2, 'type': 'man'};
-          if (row > 5) return {'player': 1, 'type': 'man'};
-        }
-        return null;
-      });
-    });
-    final Map<String, dynamic> boardForFirestore = {};
-    for (int i = 0; i < initialBoard.length; i++) {
-      boardForFirestore[i.toString()] = initialBoard[i];
-    }
-    
-    final starterId = widget.gameData['winnerId'] ?? widget.gameData['player1Id'];
-
-    await _firestore.collection('games').doc(widget.chatRoomID).update({
-      'boardState': boardForFirestore, 
-      'status': 'active',
-      'turn': starterId,
-      'winnerId': null, 
-      'endReason': null,
-    });
+  Future<void> _declareWinner(String wid, String res) async {
+    int s1 = widget.gameData['player1Score'] ?? 0, s2 = widget.gameData['player2Score'] ?? 0;
+    if (wid == widget.gameData['player1Id']) s1++; else if (wid == widget.gameData['player2Id']) s2++;
+    await _firestore.collection('games').doc(widget.chatRoomID).update({'status': 'finished', 'winnerId': wid, 'endReason': res, 'player1Score': s1, 'player2Score': s2});
   }
 
-  Future<void> _handleStopGame() async {
-    final lang = Provider.of<LanguageProvider>(context, listen: false);
-    if (widget.isInvitation) return;
-    final bool? confirm = await showDialog<bool>(
-      context: context,
-      builder: (BuildContext context) => AlertDialog(
-        title: Text(lang.t('dame_stop_game_title')),
-        content: Text(lang.t('dame_stop_game_body')),
-        actions: <Widget>[
-          TextButton( child: Text(lang.t('dialog_no')), onPressed: () => Navigator.of(context).pop(false), ),
-          TextButton( child: Text(lang.t('dialog_yes')), onPressed: () => Navigator.of(context).pop(true), style: TextButton.styleFrom(foregroundColor: Colors.red), ),
-        ],
-      ),
-    );
-    if (confirm == true) {
-      widget.onGameStopped?.call();
-      await _firestore.collection('games').doc(widget.chatRoomID).delete();
-    }
-  }
-
-  Future<void> _declareWinner(String winnerId, String reason) async {
-    if (widget.isInvitation) return;
-
-    int p1Score = widget.gameData['player1Score'] ?? 0;
-    int p2Score = widget.gameData['player2Score'] ?? 0;
-
-    if (winnerId == widget.gameData['player1Id']) {
-      p1Score++;
-    } else if (winnerId == widget.gameData['player2Id']) {
-      p2Score++;
-    }
-
-    await _firestore.collection('games').doc(widget.chatRoomID).update({
-      'status': 'finished', 
-      'winnerId': winnerId, 
-      'endReason': reason,
-      'player1Score': p1Score,
-      'player2Score': p2Score,
-    });
-  }
-
-  Future<void> _updateGameInFirestore(List<List<DamePiece?>> newBoard) async {
-    if (widget.isInvitation) return;
-    List<List<Map<String, dynamic>?>> boardAsLists = newBoard.map((row) => row.map((piece) => piece == null ? null : {'player': piece.player, 'type': piece.type.name}).toList()).toList();
-    final Map<String, dynamic> boardForFirestore = {};
-    for (int i = 0; i < boardAsLists.length; i++) {
-      boardForFirestore[i.toString()] = boardAsLists[i];
-    }
-    String nextPlayer = widget.gameData['turn'] == widget.gameData['player1Id'] ? widget.gameData['player2Id'] : widget.gameData['player1Id'];
-    await _firestore.collection('games').doc(widget.chatRoomID).update({
-      'boardState': boardForFirestore, 'turn': nextPlayer,
-    });
+  Future<void> _resetGameForMatch() async {
+    final b = {};
+    for (int r = 0; r < 10; r++) b[r.toString()] = List.generate(10, (c) => ((r + c) % 2 != 0) ? (r < 4 ? {'player': 2, 'type': 'man'} : (r > 5 ? {'player': 1, 'type': 'man'} : null)) : null);
+    await _firestore.collection('games').doc(widget.chatRoomID).update({'boardState': b, 'status': 'active', 'turn': widget.gameData['winnerId'] ?? widget.gameData['player1Id'], 'winnerId': null, 'endReason': null});
   }
 
   @override
   Widget build(BuildContext context) {
     final lang = Provider.of<LanguageProvider>(context);
-    String currentTurnPlayerId = widget.gameData['turn'] ?? '';
-    String opponentName = widget.opponentDisplayName ?? lang.t('dame_opponent_default_name');
-    bool isGameActive = widget.gameData['status'] == 'active';
+    bool active = widget.gameData['status'] == 'active';
     
     return Container(
-      padding: const EdgeInsets.symmetric(vertical: 8),
       color: Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.5),
-      child: Column(children: [
-        if (widget.isInvitation)
-          _buildInvitationHeader()
-        else if (isGameActive)
-          _buildActiveGameHeader(currentTurnPlayerId, opponentName)
-        else
-          const SizedBox(height: 48),
-            
-        AspectRatio(
-          aspectRatio: 1.0,
-          child: Container(
-            margin: const EdgeInsets.all(8),
-            decoration: BoxDecoration(border: Border.all(color: Colors.black, width: 2)),
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                final squareSize = constraints.maxWidth / 10;
-                return Stack(
-                  children: [
-                    for (int i = 0; i < 100; i++) ...[
-                      Positioned(
-                        top: (i ~/ 10) * squareSize,
-                        left: (i % 10) * squareSize,
-                        child: Container(
-                          width: squareSize,
-                          height: squareSize,
-                          color: ((i ~/ 10) + (i % 10)) % 2 == 0 ? const Color(0xFFD2B48C) : const Color(0xFF8B4513),
-                        ),
-                      ),
-                    ],
-                    ..._buildPossibleMoveIndicators(squareSize),
-                    ..._buildDamePieces(squareSize),
-                    if (_isAnimating && _movingPiece != null && _movingPieceFromOffset != null)
-                      Positioned(
-                        top: _movingPieceFromOffset!.dy,
-                        left: _movingPieceFromOffset!.dx,
-                        child: AnimatedBuilder(
-                          animation: _animation,
-                          builder: (context, child) {
-                            return Transform.translate(
-                              offset: _animation.value,
-                              child: child,
-                            );
-                          },
-                          child: DamePieceWidget(
-                            key: const ValueKey('moving_piece'),
-                            piece: _movingPiece!,
-                            squareSize: squareSize,
-                          ),
-                        ),
-                      ),
-                  ],
-                );
-              },
-            ),
-          ),
-        ),
-        
-        if (widget.isInvitation)
-          _buildInvitationButtons()
-        else if (isGameActive)
-          _buildActiveGameFooter(),
-      ]),
+      child: Column(
+        mainAxisSize: MainAxisSize.min, 
+        children: [
+          // 1. TICKER (At the top, push everything else down)
+          if (!widget.isInvitation) const _DameTickerWidget(),
+
+          // 2. HEADER (Names/Score)
+          if (!widget.isInvitation && active) 
+            _buildHeader(widget.gameData['turn'] ?? '', widget.opponentDisplayName ?? "Opponent")
+          else if (widget.isInvitation)
+            const SizedBox(height: 10)
+          else 
+            const SizedBox(height: 55),
+
+          // 3. BOARD
+          AspectRatio(aspectRatio: 1.0, child: Container(margin: const EdgeInsets.symmetric(horizontal: 8), decoration: BoxDecoration(border: Border.all(color: Colors.black, width: 2.5)), child: LayoutBuilder(builder: (ctx, cons) {
+            double sz = cons.maxWidth / 10;
+            return Stack(children: [
+              for (int i = 0; i < 100; i++) Positioned(top: (i ~/ 10) * sz, left: (i % 10) * sz, child: Container(width: sz, height: sz, color: ((i ~/ 10) + (i % 10)) % 2 == 0 ? const Color(0xFFD2B48C) : const Color(0xFF8B4513))),
+              ..._indicators(sz), ..._pieces(sz),
+              if (_isAnimating && _movP != null && _movStart != null) Positioned(top: _movStart!.dy, left: _movStart!.dx, child: AnimatedBuilder(animation: _anim, builder: (c, ch) => Transform.translate(offset: _anim.value, child: ch), child: DamePieceWidget(key: const ValueKey('anim_piece'), piece: _movP!, squareSize: sz))),
+            ]);
+          }))),
+
+          // 4. FOOTER
+          if (!widget.isInvitation && active) _buildFooter(),
+          const SizedBox(height: 10),
+        ],
+      ),
     );
   }
-  
-  List<Widget> _buildDamePieces(double squareSize) {
-    final List<Widget> pieces = [];
-    if (_gameLogic.board.length != 10) return pieces; 
 
+  List<Widget> _pieces(double sz) {
+    final List<Widget> p = [];
     for (int r = 0; r < 10; r++) {
       for (int c = 0; c < 10; c++) {
-        if (_isAnimating && r == _moveForAnimation?.fromRow && c == _moveForAnimation?.fromCol) {
-          continue;
-        }
-
-        final piece = _gameLogic.board[r][c];
-        if (piece != null) {
-          final visualRow = _isPlayer1 || widget.isInvitation ? r : 9 - r;
-          final visualCol = _isPlayer1 || widget.isInvitation ? c : 9 - c;
-          bool isSelected = (_gameLogic.selectedRow == r && _gameLogic.selectedCol == c);
-          bool mustPlay = _gameLogic.forcedCaptureMoves.any((m) => m.fromRow == r && m.fromCol == c) && !_gameLogic.isMultiJump;
-          
-          pieces.add(
-            Positioned(
-              top: visualRow * squareSize,
-              left: visualCol * squareSize,
-              child: DamePieceWidget(
-                key: ValueKey('piece_${piece.player}_${r}_$c'), 
-                piece: piece,
-                squareSize: squareSize,
-                isSelected: isSelected,
-                mustPlay: mustPlay,
-                onTap: () => _handleTap(visualRow, visualCol),
-              ),
-            ),
-          );
+        if (_isAnimating && r == _movMove?.fromRow && c == _movMove?.fromCol) continue;
+        final pc = _gameLogic.board[r][c];
+        if (pc != null) {
+          final vr = _isPlayer1 || widget.isInvitation ? r : 9 - r, vc = _isPlayer1 || widget.isInvitation ? c : 9 - c;
+          p.add(Positioned(top: vr * sz, left: vc * sz, child: SizedBox(width: sz, height: sz, child: DamePieceWidget(key: ValueKey('p$r$c'), piece: pc, squareSize: sz, isSelected: (_gameLogic.selectedRow == r && _gameLogic.selectedCol == c), mustPlay: _gameLogic.forcedCaptureMoves.any((m) => m.fromRow == r && m.fromCol == c) && !_gameLogic.isMultiJump, onTap: () => _onTap(vr, vc)))));
         }
       }
     }
-    return pieces;
+    return p;
   }
 
-  List<Widget> _buildPossibleMoveIndicators(double squareSize) {
-    final List<Widget> indicators = [];
-    if (_isAnimating) return indicators;
-    for (final move in _gameLogic.possibleMoves) {
-      final visualRow = _isPlayer1 || widget.isInvitation ? move.toRow : 9 - move.toRow;
-      final visualCol = _isPlayer1 || widget.isInvitation ? move.toCol : 9 - move.toCol;
-      indicators.add( Positioned( top: visualRow * squareSize, left: visualCol * squareSize, child: GestureDetector( onTap: () => _handleTap(visualRow, visualCol), child: SizedBox( width: squareSize, height: squareSize, child: Center( child: Container( width: squareSize * 0.4, height: squareSize * 0.4, decoration: BoxDecoration( color: Colors.green.withOpacity(0.5), shape: BoxShape.circle, ), ), ), ), ), ), );
-    }
-    return indicators;
+  List<Widget> _indicators(double sz) {
+    if (_isAnimating) return [];
+    return _gameLogic.possibleMoves.map((m) {
+      final vr = _isPlayer1 || widget.isInvitation ? m.toRow : 9 - m.toRow, vc = _isPlayer1 || widget.isInvitation ? m.toCol : 9 - m.toCol;
+      return Positioned(top: vr * sz, left: vc * sz, child: GestureDetector(onTap: () => _onTap(vr, vc), child: SizedBox(width: sz, height: sz, child: Center(child: Container(width: sz * 0.4, height: sz * 0.4, decoration: BoxDecoration(color: Colors.greenAccent.withOpacity(0.6), shape: BoxShape.circle))))));
+    }).toList();
   }
 
-  Widget _buildActiveGameHeader(String currentTurnPlayerId, String opponentName) {
-    final lang = Provider.of<LanguageProvider>(context, listen: false);
-    final currentUserId = _auth.currentUser!.uid;
-    final bool isMyTurn = currentTurnPlayerId == currentUserId;
-    
-    // 1. Menya niba ndi Player 1 (Wowe)
-    bool amIPlayer1 = widget.gameData['player1Id'] == currentUserId;
-
-    // 2. Fata amanota nyayo ava muri Firebase
-    int p1Score = widget.gameData['player1Score'] ?? 0;
-    int p2Score = widget.gameData['player2Score'] ?? 0;
-
-    // 3. Logic itandukanya amanota
-    int myScore = amIPlayer1 ? p1Score : p2Score;
-    int opponentScore = amIPlayer1 ? p2Score : p1Score;
-
-    Color myColor = isMyTurn ? Colors.green.shade800 : Colors.black87;
-    Color oppColor = !isMyTurn ? Colors.orange.shade900 : Colors.black54;
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-      child: Column(
-        children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.5),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: Colors.black12),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                // URUHANDE RWANJE (WEWE)
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      lang.t('chat_you'), // "Wewe"
-                      style: TextStyle(
-                        fontSize: 12, 
-                        fontWeight: FontWeight.bold, 
-                        color: Colors.grey.shade700
-                      ),
-                    ),
-                    Text(
-                      "$myScore", // Amanota yawe
-                      style: TextStyle(
-                        fontSize: 24, 
-                        fontWeight: FontWeight.w900, 
-                        color: myColor
-                      ),
-                    ),
-                  ],
-                ),
-
-                // HAGATI (VS)
-                Text(
-                  "-", 
-                  style: TextStyle(fontSize: 20, color: Colors.grey.shade400)
-                ),
-
-                // URUHANDE RWA MUGENZI WAWE
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Text(
-                      opponentName.length > 10 
-                          ? "${opponentName.substring(0, 8)}..." 
-                          : opponentName,
-                      style: TextStyle(
-                        fontSize: 12, 
-                        fontWeight: FontWeight.bold, 
-                        color: Colors.grey.shade700
-                      ),
-                    ),
-                    Text(
-                      "$opponentScore", // Amanota ye
-                      style: TextStyle(
-                        fontSize: 24, 
-                        fontWeight: FontWeight.w900, 
-                        color: oppColor
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-          
-          const SizedBox(height: 8),
-          
-          AnimatedOpacity(
-            opacity: 1.0,
-            duration: const Duration(milliseconds: 300),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-              decoration: BoxDecoration(
-                color: isMyTurn ? Colors.green.shade100 : Colors.orange.shade100,
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Text( 
-                isMyTurn ? lang.t('dame_your_turn') : lang.t('dame_opponent_turn').replaceAll('{opponentName}', opponentName), 
-                style: TextStyle( 
-                  fontSize: 14, 
-                  fontWeight: FontWeight.bold, 
-                  color: isMyTurn ? Colors.green.shade800 : Colors.orange.shade900
-                ), 
-                overflow: TextOverflow.ellipsis, 
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-  
-  Widget _buildActiveGameFooter() {
-    final lang = Provider.of<LanguageProvider>(context, listen: false);
-    return Padding(
-      padding: const EdgeInsets.only(top: 10, bottom: 10),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-        children: [
-          OutlinedButton.icon(
-            onPressed: _handleStopGame,
-            icon: const Icon(Icons.close),
-            label: Text(lang.t('dame_stop_game_button')),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: Colors.grey.shade800,
-              side: BorderSide(color: Colors.grey.shade400),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-            ),
-          ),
-          ElevatedButton.icon(
-            onPressed: _handleResign,
-            icon: const Icon(Icons.flag),
-            label: Text(lang.t('dame_resign_button')),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red.shade700,
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-            ),
-          ),
-        ],
-      ),
-    );
+  Widget _buildHeader(String tid, String oppName) {
+    final lang = Provider.of<LanguageProvider>(context);
+    bool myT = tid == _auth.currentUser!.uid, amI1 = widget.gameData['player1Id'] == _auth.currentUser!.uid;
+    int sM = amI1 ? (widget.gameData['player1Score'] ?? 0) : (widget.gameData['player2Score'] ?? 0);
+    int sO = amI1 ? (widget.gameData['player2Score'] ?? 0) : (widget.gameData['player1Score'] ?? 0);
+    return Padding(padding: const EdgeInsets.fromLTRB(10, 5, 10, 8), child: Column(children: [
+      Container(padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8), decoration: BoxDecoration(color: Colors.white.withOpacity(0.5), borderRadius: BorderRadius.circular(16)), child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+        Column(children: [const Text("YOU", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)), Text("$sM", style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: myT ? Colors.green.shade800 : Colors.black87))]),
+        const Text("-", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+        Column(children: [Text(oppName.toUpperCase(), style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold)), Text("$sO", style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: !myT ? Colors.orange.shade900 : Colors.black54))]),
+      ])),
+      const SizedBox(height: 4),
+      Text(myT ? lang.t('dame_your_turn') : lang.t('dame_opponent_turn').replaceFirst('{opponentName}', oppName), style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: myT ? Colors.green.shade700 : Colors.orange.shade800)),
+    ]));
   }
 
-  Widget _buildInvitationHeader() {
-    final lang = Provider.of<LanguageProvider>(context, listen: false);
-    return SizedBox( height: 48, child: widget.isWaiting 
-      ? Row( mainAxisAlignment: MainAxisAlignment.center, children: [ const SizedBox(height: 16, width: 16, child: CircularProgressIndicator(strokeWidth: 2)), const SizedBox(width: 8), Text(lang.t('dame_invitation_sent'), style: const TextStyle(fontSize: 16, fontStyle: FontStyle.italic)), ], ) 
-      : Center( child: Text(lang.t('dame_send_invitation_header'), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)), ), 
-    );
+  Widget _buildFooter() {
+    final lang = Provider.of<LanguageProvider>(context);
+    return Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
+      TextButton.icon(onPressed: () async {
+        final b = await showDialog<bool>(context: context, builder: (c) => AlertDialog(
+          title: Text(lang.t('dame_stop_game_title')), 
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(c, false), child: Text(lang.t('dialog_no'))), 
+            TextButton(onPressed: () => Navigator.pop(c, true), child: Text(lang.t('dialog_yes')))
+          ]));
+        if (b == true) { widget.onGameStopped?.call(); await _firestore.collection('games').doc(widget.chatRoomID).delete(); }
+      }, icon: const Icon(Icons.close, size: 18), label: Text(lang.t('dame_stop_game_button'))),
+      ElevatedButton.icon(onPressed: () async {
+        final b = await showDialog<bool>(context: context, builder: (c) => AlertDialog(
+          title: Text(lang.t('dame_resign_title')), 
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(c, false), child: Text(lang.t('dialog_no'))), 
+            TextButton(onPressed: () => Navigator.pop(c, true), child: Text(lang.t('dialog_yes'))) // ✅ Updated label
+          ]));
+        if (b == true) await _declareWinner(_isPlayer1 ? widget.gameData['player2Id'] : widget.gameData['player1Id'], lang.t('dame_win_reason_resign'));
+      }, icon: const Icon(Icons.flag, size: 18), label: Text(lang.t('dame_resign_button')), style: ElevatedButton.styleFrom(backgroundColor: Colors.red.shade700, foregroundColor: Colors.white)),
+    ]);
   }
 
-  Widget _buildInvitationButtons() {
-    final lang = Provider.of<LanguageProvider>(context, listen: false);
-    return Padding( 
-      padding: const EdgeInsets.only(top: 10, bottom: 10), 
-      child: Row( 
-        mainAxisAlignment: MainAxisAlignment.spaceEvenly, 
-        children: [ 
-          ElevatedButton.icon( 
-            onPressed: widget.onCancel, 
-            icon: const Icon(Icons.close), 
-            label: Text(widget.isWaiting ? lang.t('dame_cancel_invitation_button') : lang.t('dame_cancel_button')), 
-            style: ElevatedButton.styleFrom( backgroundColor: Colors.red.shade700, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)) ), 
-          ), 
-          if (!widget.isWaiting) 
-            ElevatedButton.icon( 
-              onPressed: widget.onSendInvitation, 
-              icon: const Icon(Icons.send), 
-              label: Text(lang.t('dame_send_invitation_button')), 
-              style: ElevatedButton.styleFrom( backgroundColor: Colors.green.shade600, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)) ), 
-            ), 
-        ], 
-      ), 
-    );
-  }
+  @override
+  void dispose() { _animCtrl.dispose(); _moveP.dispose(); _capP.dispose(); _proP.dispose(); _winP.dispose(); _loseP.dispose(); super.dispose(); }
 }

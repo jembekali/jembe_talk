@@ -1,4 +1,4 @@
-// lib/services/firebase_service.dart (VERSION ISUBIYE UKO YARI KANDI IKORA)
+// lib/services/firebase_service.dart (VERSION IYIHUTISHIJE - OPTIMIZED)
 
 import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -6,14 +6,17 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:jembe_talk/services/database_helper.dart';
-import 'dart:developer'; // << Twongeyemwo iyi kugira dukoreshe log()
+import 'dart:developer';
 
 class FirebaseService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseStorage _storage = FirebaseStorage.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
 
-  // << Constructor yagarutse uko yari isanzwe >>
+  // SPEED ENGINE: Ibi bituma iyo App yashatse URL imwe, idasubira kuri Storage 
+  // kuyishaka bwa kabiri kuko iyibika mu mutwe (Memory Cache).
+  static final Map<String, String> _urlCache = {};
+
   FirebaseService();
 
   Future<void> saveUserFcmToken() async {
@@ -21,31 +24,41 @@ class FirebaseService {
     if (currentUser == null) return;
     
     try {
-      await FirebaseMessaging.instance.requestPermission();
+      // Ibi tubikore mu mudehezo (Background) kugira ngo bitahanga UI
+      FirebaseMessaging.instance.requestPermission();
       
       final token = await FirebaseMessaging.instance.getToken();
       if (token != null) {
-        await _firestore.collection('users').doc(currentUser.uid).set(
-          {'fcmToken': token},
-          SetOptions(merge: true),
-        );
-        log("FCM Token saved successfully for user ${currentUser.uid}");
+        // Koresha update aho gukoresha set(merge:true) niba user asanzwe ahari kuko yihuta
+        await _firestore.collection('users').doc(currentUser.uid).update(
+          {'fcmToken': token}
+        ).catchError((e) {
+           // Niba user atari yarigeze abaho, hano niho dukoresha set
+           return _firestore.collection('users').doc(currentUser.uid).set(
+             {'fcmToken': token}, SetOptions(merge: true)
+           );
+        });
+        log("FCM Token saved.");
       }
     } catch (e) {
       log("Error saving FCM token: $e");
     }
   }
 
+  // IYIHUTISHIJE: Iyi function ubu ifite 'Cache'
   Future<String> getFreshDownloadUrl(String storagePath) async {
-    log(">>> [DEBUG - getFreshDownloadUrl] Requesting URL for path: '$storagePath'");
+    if (_urlCache.containsKey(storagePath)) {
+      return _urlCache[storagePath]!;
+    }
+
     try {
       final ref = _storage.ref().child(storagePath);
       final downloadUrl = await ref.getDownloadURL();
-      log(">>> [DEBUG - getFreshDownloadUrl] URL RECEIVED: $downloadUrl");
+      _urlCache[storagePath] = downloadUrl; // Bika mu mutwe
       return downloadUrl;
     } catch (e) {
-      log("!!!!!! [DEBUG - getFreshDownloadUrl] FATAL ERROR: Could not get URL for '$storagePath'. Reason: $e");
-      throw Exception("Could not get a fresh URL for the file."); // Ubutumwa bworoshe
+      log("Error getFreshDownloadUrl: $e");
+      throw Exception("URL not found");
     }
   }
   
@@ -54,14 +67,10 @@ class FirebaseService {
     required String storagePath,
     Function(double progress)? onProgress,
   }) async {
-    if (!File(localFilePath).existsSync()) {
-      throw Exception("This file was not found: $localFilePath");
-    }
-    
     File file = File(localFilePath);
+    if (!file.existsSync()) throw Exception("File not found");
+    
     try {
-      log(">>> [DEBUG - uploadChatMedia] Uploading file to provided path: '$storagePath'");
-
       Reference ref = _storage.ref().child(storagePath);
       UploadTask uploadTask = ref.putFile(file);
 
@@ -71,14 +80,17 @@ class FirebaseService {
       });
 
       TaskSnapshot snapshot = await uploadTask;
-      return await snapshot.ref.getDownloadURL();
+      String url = await snapshot.ref.getDownloadURL();
+      _urlCache[storagePath] = url; // Bika mu mutwe kugira ngo App itayishaka bwa kabiri
+      return url;
       
     } catch (e) {
-      log("!!!!!! [DEBUG - uploadChatMedia] Critical error during file upload: $e");
-      throw Exception("File upload failed."); // Ubutumwa bworoshe
+      log("UploadChatMedia Error: $e");
+      throw Exception("Upload failed");
     }
   }
 
+  // Upload y'ama-posts yagizwe WebP muri Cloud Functions
   Future<String?> uploadMedia(String? localFilePath, String postId) async {
     if (localFilePath == null || !File(localFilePath).existsSync()) return null;
     
@@ -90,7 +102,7 @@ class FirebaseService {
       TaskSnapshot snapshot = await uploadTask;
       return await snapshot.ref.getDownloadURL();
     } catch (e) {
-      log("Error uploading media for post: $e");
+      log("Error uploading media: $e");
       return null;
     }
   }
@@ -98,17 +110,18 @@ class FirebaseService {
   Future<void> uploadPost(Map<String, dynamic> postData) async {
     try {
       final String postId = postData[DatabaseHelper.colPostId];
-      Map<String, dynamic> remotePostData = Map.from(postData);
+      Map<String, dynamic> remoteData = Map.from(postData);
       
-      remotePostData.remove(DatabaseHelper.colSyncStatus);
-      remotePostData.remove(DatabaseHelper.colIsLikedByMe);
+      remoteData.remove(DatabaseHelper.colSyncStatus);
+      remoteData.remove(DatabaseHelper.colIsLikedByMe);
       
-      remotePostData[DatabaseHelper.columnTimestamp] = Timestamp.fromMillisecondsSinceEpoch(postData[DatabaseHelper.columnTimestamp]);
+      // Serialization: Koresha int nka timestamp (iyihutisha Firestore indexing)
+      remoteData[DatabaseHelper.columnTimestamp] = Timestamp.fromMillisecondsSinceEpoch(postData[DatabaseHelper.columnTimestamp]);
 
-      await _firestore.collection('posts').doc(postId).set(remotePostData);
+      await _firestore.collection('posts').doc(postId).set(remoteData);
     } catch (e) {
       log("Error uploading post: $e");
-      throw Exception('Post upload failed.'); // Ubutumwa bworoshe
+      throw Exception('Post upload failed.');
     }
   }
 }

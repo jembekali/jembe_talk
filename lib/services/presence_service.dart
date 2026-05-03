@@ -1,13 +1,18 @@
-// lib/services/presence_service.dart
+// lib/services/presence_service.dart (VERSION YAKOSOWE - 100% REALTIME)
 
-import 'dart:async'; // <<< ONGERAMO IYI IMPORT
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_core/firebase_core.dart'; // <<<--- Ingenzi kuri Firebase.app()
 import 'package:firebase_database/firebase_database.dart';
 
 class PresenceService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
-  final FirebaseDatabase _database = FirebaseDatabase.instance;
-  Timer? _offlineTimer; // <<< IYI NI ISaha NSHASHA
+  
+  // 1. GUHUZA DATABASE URL (Kugira ngo ihuze na Admin Panel)
+  // Ibi bituma ubutumwa n'imikorere biba realtime nta gutinda
+  final FirebaseDatabase _database = FirebaseDatabase.instanceFor(
+    app: Firebase.app(),
+    databaseURL: "https://jembe-talk-1-default-rtdb.firebaseio.com/",
+  );
 
   void initialize() {
     final user = _auth.currentUser;
@@ -18,44 +23,43 @@ class PresenceService {
 
     connectedRef.onValue.listen((event) {
       if (event.snapshot.value == true) {
-        final conStatus = {
-          'state': 'online',
-          'last_changed': ServerValue.timestamp,
-        };
-        myStatusRef.set(conStatus);
-
+        
+        // A. Iyo internet izimye nabi, Firebase Server imushyira Offline ako kanya
         myStatusRef.onDisconnect().set({
           'state': 'offline',
+          'last_changed': ServerValue.timestamp,
+        });
+
+        // B. Iyo afunguye App, ahita aba Online ako kanya
+        myStatusRef.set({
+          'state': 'online',
           'last_changed': ServerValue.timestamp,
         });
       }
     });
   }
 
-  void goOffline() {
-    // Aho guhita twandika "offline", dutanguza isaha y'iminota ibiri
-    _offlineTimer?.cancel();
-    _offlineTimer = Timer(const Duration(minutes: 2), () {
-      final user = _auth.currentUser;
-      if (user == null) return;
-      
-      final myStatusRef = _database.ref('status/${user.uid}');
-      myStatusRef.set({
-        'state': 'offline',
-        'last_changed': ServerValue.timestamp,
-      });
+  // C. Ihita ikura umuntu online ako kanya (Nta Timer)
+  // Ikenewe cyane kuri Delete Account cyangwa Logout
+  void forceOffline() {
+    final user = _auth.currentUser;
+    if (user == null) return;
+    _database.ref('status/${user.uid}').set({
+      'state': 'offline',
+      'last_changed': ServerValue.timestamp,
     });
   }
 
-  void goOnline() {
-    // Niba hari isaha yari yatanguye kubara, turayihagarika
-    _offlineTimer?.cancel();
+  // Mu buryo bushya bwa WhatsApp style, goOffline na forceOffline 
+  // zikora kimwe (Ako kanya) kugira ngo imikorere yihute
+  void goOffline() {
+    forceOffline();
+  }
 
+  void goOnline() {
     final user = _auth.currentUser;
     if (user == null) return;
-    
-    final myStatusRef = _database.ref('status/${user.uid}');
-    myStatusRef.set({
+    _database.ref('status/${user.uid}').set({
       'state': 'online',
       'last_changed': ServerValue.timestamp,
     });

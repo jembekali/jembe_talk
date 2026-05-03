@@ -1,240 +1,235 @@
+import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-import 'package:jembe_talk/language_provider.dart';
-import 'package:jembe_talk/home_screen.dart';
-import 'package:jembe_talk/welcome_screen.dart'; // Import WelcomeScreen kugira dusubireyo
-import 'package:jembe_talk/profile_setup_screen.dart';
-import 'package:pinput/pinput.dart';
 import 'package:country_code_picker/country_code_picker.dart';
-import 'package:page_transition/page_transition.dart'; // <<<--- IMPORT Y'INGENZI
+import 'package:google_sign_in/google_sign_in.dart';
+import 'package:provider/provider.dart';
+import 'package:phone_numbers_parser/phone_numbers_parser.dart'; 
+import 'package:jembe_talk/language_provider.dart';
+import 'package:jembe_talk/app_translations.dart';
+import 'package:jembe_talk/home_screen.dart';
+import 'package:jembe_talk/registration_screen.dart';
+import 'package:jembe_talk/account_recovery_screen.dart';
+import 'package:jembe_talk/email_verification_screen.dart';
 
 class PhoneAuthScreen extends StatefulWidget {
-  const PhoneAuthScreen({super.key});
+  final bool isResetModeInitially; 
+  const PhoneAuthScreen({super.key, this.isResetModeInitially = false});
 
   @override
   State<PhoneAuthScreen> createState() => _PhoneAuthScreenState();
 }
 
 class _PhoneAuthScreenState extends State<PhoneAuthScreen> {
-  final FirebaseAuth _auth = FirebaseAuth.instance;
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final TextEditingController _phoneController = TextEditingController();
-  final TextEditingController _otpController = TextEditingController();
+  final _phoneController = TextEditingController();
+  final _passwordController = TextEditingController();
+  final _emailResetController = TextEditingController();
+  final _phoneResetController = TextEditingController(); 
+  final GoogleSignIn _googleSignIn = GoogleSignIn();
 
-  String _selectedCountryCode = "+257"; 
-  
-  String? _verificationId;
-  bool _isOtpSent = false;
   bool _isLoading = false;
+  late bool _isResetMode; 
+  bool _obscurePassword = true;
+  String _selectedCountryCode = "+257";
+  String _selectedISOCode = "BI";
 
-  Future<void> _verifyPhoneNumber() async {
-    final lang = Provider.of<LanguageProvider>(context, listen: false);
-    String phoneNumber = "$_selectedCountryCode${_phoneController.text.trim()}";
-    
-    setState(() { _isLoading = true; });
+  @override
+  void initState() {
+    super.initState();
+    _isResetMode = widget.isResetModeInitially; 
+  }
+
+  Future<void> _handleLogin(String c) async {
+    String phoneInput = _phoneController.text.trim();
+    String password = _passwordController.text.trim();
+
+    if (phoneInput.isEmpty || password.isEmpty) {
+      _showSnackBar(AppTranslations.translate(c, 'error_fill_all'), Colors.orange);
+      return;
+    }
+
     try {
-      await _auth.verifyPhoneNumber(
-        phoneNumber: phoneNumber,
-        verificationCompleted: (PhoneAuthCredential credential) async { await _signInWithCredential(credential); },
-        verificationFailed: (FirebaseAuthException e) {
-          if (mounted) {
-            setState(() { _isLoading = false; });
-            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("${lang.t('error_generic')} ${e.message}")));
-          }
-        },
-        codeSent: (String verificationId, int? resendToken) {
-          if (mounted) {
-            setState(() { _verificationId = verificationId; _isOtpSent = true; _isLoading = false; });
-          }
-        },
-        codeAutoRetrievalTimeout: (String verificationId) {},
-        timeout: const Duration(seconds: 60),
+      final phoneNumber = PhoneNumber.parse(
+        phoneInput, 
+        destinationCountry: IsoCode.values.byName(_selectedISOCode.toUpperCase())
       );
-    } catch (e) {
-      if (mounted) {
-        setState(() { _isLoading = false; });
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${lang.t('error_unknown')} $e')));
+      
+      if (!phoneNumber.isValid(type: PhoneNumberType.mobile)) {
+        _showSnackBar(AppTranslations.translate(c, 'val_phone_err'), Colors.orangeAccent);
+        return;
       }
+    } catch (e) {
+      _showSnackBar(AppTranslations.translate(c, 'val_phone_err'), Colors.orangeAccent);
+      return;
+    }
+
+    String fullPhone = "$_selectedCountryCode$phoneInput";
+    setState(() => _isLoading = true);
+    try {
+      final query = await FirebaseFirestore.instance.collection('users').where('phoneNumber', isEqualTo: fullPhone).limit(1).get(); 
+      if (query.docs.isEmpty) {
+        _showSnackBar(AppTranslations.translate(c, 'error_no_account'), Colors.blueGrey);
+        setState(() => _isLoading = false);
+        return;
+      }
+
+      String hiddenEmail = query.docs.first.data()['email'];
+      UserCredential userCredential = await FirebaseAuth.instance.signInWithEmailAndPassword(
+        email: hiddenEmail, 
+        password: password
+      );
+      User? user = userCredential.user;
+
+      if (user != null && !user.emailVerified) {
+        if (!mounted) return;
+        _showSnackBar(AppTranslations.translate(c, 'verify_title'), Colors.amber);
+        Navigator.push(context, MaterialPageRoute(builder: (ctx) => EmailVerificationScreen(email: hiddenEmail)));
+        setState(() => _isLoading = false);
+        return;
+      }
+
+      if (!mounted) return;
+      Navigator.pushAndRemoveUntil(context, MaterialPageRoute(builder: (ctx) => const HomeScreen()), (r) => false);
+      
+    } catch (e) {
+      _showSnackBar(AppTranslations.translate(c, 'error_wrong_password'), Colors.redAccent);
+    } finally { 
+      if (mounted) setState(() => _isLoading = false); 
     }
   }
 
-  Future<void> _signInWithOtp() async {
-    final lang = Provider.of<LanguageProvider>(context, listen: false);
-    if (_verificationId == null) return;
-    setState(() { _isLoading = true; });
+  Future<void> _handlePasswordReset(String c) async {
+    String email = _emailResetController.text.trim();
+    String phoneInput = _phoneResetController.text.trim();
+    if (email.isEmpty || phoneInput.isEmpty) { 
+      _showSnackBar(AppTranslations.translate(c, 'error_fill_all'), Colors.orange); 
+      return; 
+    }
+    String fullPhone = "$_selectedCountryCode$phoneInput";
+    setState(() => _isLoading = true);
     try {
-      final credential = PhoneAuthProvider.credential(verificationId: _verificationId!, smsCode: _otpController.text.trim());
-      await _signInWithCredential(credential);
-    } catch (e) { if (mounted) { setState(() { _isLoading = false; }); ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(lang.t('error_invalid_code')))); } }
-  }
-
-  Future<void> _signInWithCredential(PhoneAuthCredential credential) async {
-    final lang = Provider.of<LanguageProvider>(context, listen: false);
-    try {
-      final UserCredential userCredential = await _auth.signInWithCredential(credential);
-      final User? user = userCredential.user;
-      if (user != null) {
-        final doc = await _firestore.collection('users').doc(user.uid).get();
-
-        if (doc.exists) {
-          if (mounted) { 
-            // <<<--- ANIMATION: KUJA KURI HOME SCREEN (Right to Left) --->>>
-            Navigator.pushAndRemoveUntil(
-              context, 
-              PageTransition(
-                type: PageTransitionType.rightToLeftWithFade,
-                child: const HomeScreen(),
-                duration: const Duration(milliseconds: 1000), // Buke buke (1 sec)
-                curve: Curves.easeInOut,
-              ),
-              (route) => false
-            ); 
-          }
-        } else {
-          if (mounted) { 
-            // <<<--- ANIMATION: KUJA KURI PROFILE SETUP (Right to Left) --->>>
-            Navigator.pushAndRemoveUntil(
-              context, 
-              PageTransition(
-                type: PageTransitionType.rightToLeftWithFade,
-                child: const ProfileSetupScreen(),
-                duration: const Duration(milliseconds: 1000), // Buke buke (1 sec)
-                curve: Curves.easeInOut,
-              ), 
-              (route) => false
-            ); 
-          }
-        }
+      final query = await FirebaseFirestore.instance.collection('users').where('email', isEqualTo: email).where('phoneNumber', isEqualTo: fullPhone).limit(1).get();
+      if (query.docs.isEmpty) {
+        _showSnackBar(AppTranslations.translate(c, 'error_match'), Colors.redAccent);
+        setState(() => _isLoading = false);
+        return;
       }
-    } on FirebaseAuthException catch (e) { if (mounted) { ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("${lang.t('error_signin')} ${e.message}"))); }
-    } finally { if (mounted) { setState(() { _isLoading = false; }); } }
+      await FirebaseAuth.instance.sendPasswordResetEmail(email: email);
+      if (mounted) {
+        _showSuccessDialog(AppTranslations.translate(c, 'link_sent_title'), AppTranslations.translate(c, 'link_sent_body'), c);
+        setState(() => _isResetMode = false);
+      }
+    } catch (e) { 
+      _showSnackBar(AppTranslations.translate(c, 'error_generic'), Colors.orange); 
+    } finally { 
+      if (mounted) setState(() => _isLoading = false); 
+    }
   }
 
-  // Iyi function idufasha gusubira inyuma muri WelcomeScreen n'animation nziza
-  void _goBackToWelcome() {
-    Navigator.pushReplacement(
-      context,
-      PageTransition(
-        type: PageTransitionType.leftToRightWithFade, // Gusubira inyuma (Ibumoso)
-        child: const WelcomeScreen(),
-        duration: const Duration(milliseconds: 1000), // Buke buke
-        curve: Curves.easeInOut,
-      ),
-    );
+  Future<void> _pickEmailWithGoogle(TextEditingController ctrl) async {
+    try {
+      await _googleSignIn.signOut();
+      final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
+      if (googleUser != null) { setState(() => ctrl.text = googleUser.email); }
+    } catch (e) { }
+  }
+
+  void _showSnackBar(String m, Color col) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m, style: const TextStyle(fontWeight: FontWeight.bold)), backgroundColor: col, behavior: SnackBarBehavior.floating));
+
+  void _showSuccessDialog(String title, String body, String c) {
+    showDialog(context: context, builder: (ctx) => AlertDialog(backgroundColor: const Color(0xFF1E1E26), title: Text(title, style: const TextStyle(color: Colors.white)), content: Text(body, style: const TextStyle(color: Colors.white70)), actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: Text(AppTranslations.translate(c, 'success_btn')))]));
   }
 
   @override
   Widget build(BuildContext context) {
     final lang = Provider.of<LanguageProvider>(context);
+    final String c = lang.currentLanguage;
+    return Scaffold(
+      backgroundColor: const Color(0xFF1C2935),
+      appBar: AppBar(backgroundColor: Colors.transparent, elevation: 0, leading: IconButton(icon: const Icon(Icons.arrow_back_ios_new, color: Colors.white, size: 20), onPressed: () => Navigator.pop(context))),
+      body: SingleChildScrollView(padding: const EdgeInsets.symmetric(horizontal: 30), child: Column(children: [
+        const Icon(Icons.star_rounded, color: Colors.amber, size: 90),
+        const Text("Jembe Talk", style: TextStyle(color: Colors.white, fontSize: 32, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 50),
+        AnimatedSwitcher(duration: const Duration(milliseconds: 500), child: _isResetMode ? _buildResetView(c) : _buildLoginView(c)),
+      ])),
+    );
+  }
 
-    // Dukuraho uburyo busanzwe bwo gusubira inyuma (WillPopScope/PopScope)
-    // Kugira ngo dukoreshe animation yacu bwite.
-    return PopScope(
-      canPop: false, // Tubuza back button isanzwe gukora ako kanya
-      onPopInvoked: (didPop) {
-        if (didPop) return;
-        _goBackToWelcome(); // Dukoresha animation yacu
-      },
-      child: Scaffold(
-        appBar: AppBar(
-          title: Text(lang.t('verify_phone_title')),
-          // Twahinduye buto yo gusubira inyuma iri hejuru
-          leading: IconButton(
-            icon: const Icon(Icons.arrow_back),
-            onPressed: _goBackToWelcome,
-          ),
-        ),
-        body: SingleChildScrollView(
-          padding: const EdgeInsets.all(20.0), 
-          child: _isOtpSent ? _buildOtpScreen(lang) : _buildPhoneInputScreen(lang)
+  Widget _buildLoginView(String c) {
+    return Column(key: const ValueKey(1), children: [
+      _buildPhoneInput(controller: _phoneController),
+      const SizedBox(height: 20),
+      TextField(
+        controller: _passwordController,
+        obscureText: _obscurePassword,
+        style: const TextStyle(color: Colors.white),
+        decoration: InputDecoration(
+          prefixIcon: const Icon(Icons.lock_outline, color: Colors.white38),
+          hintText: AppTranslations.translate(c, 'password_label'),
+          filled: true, fillColor: Colors.white.withOpacity(0.05),
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(15), borderSide: BorderSide.none),
+          // ✅ NTIBIHINDURA LOGIC: Agakuru Bot izasoma
+          semanticCounterText: "password_field", 
+          suffixIcon: IconButton(icon: Icon(_obscurePassword ? Icons.visibility_off : Icons.visibility, color: Colors.white38), onPressed: () => setState(() => _obscurePassword = !_obscurePassword)),
         ),
       ),
-    );
+      Align(alignment: Alignment.centerRight, child: TextButton(onPressed: () => setState(() => _isResetMode = true), child: Text(AppTranslations.translate(c, 'forgot_password'), style: const TextStyle(color: Colors.white60)))),
+      const SizedBox(height: 20),
+      _isLoading ? const CircularProgressIndicator(color: Colors.teal) : ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1E8449), foregroundColor: Colors.white, minimumSize: const Size.fromHeight(58), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15))), onPressed: () => _handleLogin(c), child: Text(AppTranslations.translate(c, 'login_btn'), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16))),
+      const SizedBox(height: 40),
+      _buildRegisterPrompt(c),
+    ]);
   }
 
-  Widget _buildPhoneInputScreen(LanguageProvider lang) {
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        const SizedBox(height: 50),
-        Text(lang.t('enter_phone_title'), style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
-        const SizedBox(height: 10),
-        Text(lang.t('sms_notice'), style: const TextStyle(fontSize: 14, color: Colors.grey), textAlign: TextAlign.center),
-        const SizedBox(height: 30),
-        Container(
-          decoration: BoxDecoration(
-            border: Border.all(color: Colors.grey),
-            borderRadius: BorderRadius.circular(12.0),
-          ),
-          child: Row(
-            children: [
-              CountryCodePicker(
-                onChanged: (countryCode) {
-                  setState(() {
-                    _selectedCountryCode = countryCode.dialCode!;
-                  });
-                },
-                initialSelection: 'BI',
-                favorite: const ['BI', 'RW', 'UG', 'TZ', 'KE', 'CD'],
-                showCountryOnly: false,
-                showOnlyCountryWhenClosed: false,
-                alignLeft: false,
-              ),
-              Expanded(
-                child: TextField(
-                  controller: _phoneController,
-                  keyboardType: TextInputType.phone,
-                  decoration: InputDecoration(
-                    hintText: lang.t('phone_hint'),
-                    border: InputBorder.none,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 40),
-        _isLoading ? const CircularProgressIndicator()
-            : ElevatedButton(
-                onPressed: _verifyPhoneNumber,
-                style: ElevatedButton.styleFrom(
-                  minimumSize: const Size.fromHeight(55),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.0)),
-                ),
-                child: Text(lang.t('send_code_btn'), style: const TextStyle(fontSize: 18)),
-              ),
-      ],
-    );
-  }
-  
-  Widget _buildOtpScreen(LanguageProvider lang) {
-    String fullPhoneNumber = "$_selectedCountryCode${_phoneController.text.trim()}";
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        const SizedBox(height: 50),
-        Text(lang.t('verify_otp_title'), style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
-        const SizedBox(height: 10),
-        Text("${lang.t('enter_otp_subtitle')} $fullPhoneNumber", style: const TextStyle(fontSize: 14, color: Colors.grey), textAlign: TextAlign.center),
-        const SizedBox(height: 30),
-        Pinput(length: 6, controller: _otpController, autofocus: true, onCompleted: (pin) => _signInWithOtp()),
-        const SizedBox(height: 40),
-        _isLoading ? const CircularProgressIndicator()
-            : ElevatedButton(
-                onPressed: _signInWithOtp,
-                style: ElevatedButton.styleFrom(
-                  minimumSize: const Size.fromHeight(55),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.0)),
-                ),
-                child: Text(lang.t('verify_btn'), style: const TextStyle(fontSize: 18)),
-              ),
-        TextButton(
-          onPressed: () { setState(() { _isOtpSent = false; _isLoading = false; }); },
-          child: Text(lang.t('change_phone_btn')),
+  Widget _buildResetView(String c) {
+    return Column(key: const ValueKey(2), children: [
+      const Icon(Icons.security_rounded, size: 70, color: Colors.amber),
+      const SizedBox(height: 15),
+      Text(AppTranslations.translate(c, 'forgot_password'), style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold)),
+      const SizedBox(height: 20),
+      TextFormField(
+        controller: _emailResetController, 
+        style: const TextStyle(color: Colors.white), 
+        decoration: InputDecoration(
+          prefixIcon: const Icon(Icons.email_outlined, color: Colors.white38), 
+          hintText: AppTranslations.translate(c, 'email_label'), 
+          filled: true, fillColor: Colors.white.withOpacity(0.05), 
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(15), borderSide: BorderSide.none),
+          suffixIcon: TextButton(onPressed: () => _pickEmailWithGoogle(_emailResetController), child: const Text("Google", style: TextStyle(color: Colors.amber, fontWeight: FontWeight.bold)))
         )
-      ],
-    );
+      ),
+      const SizedBox(height: 15),
+      _buildPhoneInput(controller: _phoneResetController),
+      const SizedBox(height: 30),
+      _isLoading ? const CircularProgressIndicator(color: Colors.amber) : ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: Colors.amber.shade800, foregroundColor: Colors.white, minimumSize: const Size.fromHeight(58), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15))), onPressed: () => _handlePasswordReset(c), child: Text(AppTranslations.translate(c, 'resend_link').toUpperCase(), style: const TextStyle(fontWeight: FontWeight.bold))),
+      TextButton(onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (ctx) => const AccountRecoveryScreen())), child: Text(AppTranslations.translate(c, 'forgot_everything'), style: const TextStyle(color: Colors.redAccent, decoration: TextDecoration.underline))),
+      TextButton(onPressed: () => setState(() => _isResetMode = false), child: Text(AppTranslations.translate(c, 'back_btn'), style: const TextStyle(color: Colors.white38))),
+    ]);
+  }
+
+  Widget _buildPhoneInput({required TextEditingController controller}) {
+    return Container(decoration: BoxDecoration(color: Colors.white.withOpacity(0.05), borderRadius: BorderRadius.circular(15), border: Border.all(color: Colors.white12)), child: Row(children: [
+      CountryCodePicker(
+        onChanged: (v) => setState(() { _selectedCountryCode = v.dialCode!; _selectedISOCode = v.code!; }),
+        initialSelection: 'BI', favorite: const ['BI', 'RW'], textStyle: const TextStyle(color: Colors.white)
+      ),
+      Expanded(child: TextField(
+        controller: controller, 
+        keyboardType: TextInputType.phone, 
+        style: const TextStyle(color: Colors.white), 
+        decoration: const InputDecoration(
+          border: InputBorder.none, 
+          contentPadding: EdgeInsets.symmetric(horizontal: 10),
+          // ✅ NTIBIHINDURA LOGIC: Agakuru Bot izasoma
+          semanticCounterText: "phone_field", 
+        )
+      ))
+    ]));
+  }
+
+  Widget _buildRegisterPrompt(String c) {
+    return InkWell(onTap: () => Navigator.push(context, MaterialPageRoute(builder: (ctx) => const RegistrationScreen())), child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [Text(AppTranslations.translate(c, 'new_here'), style: const TextStyle(color: Colors.white60)), Text(AppTranslations.translate(c, 'register_btn_text'), style: const TextStyle(color: Colors.amber, fontWeight: FontWeight.bold))]));
   }
 }

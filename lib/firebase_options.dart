@@ -41,48 +41,54 @@ class DefaultFirebaseOptions {
   }
 
   static const FirebaseOptions web = FirebaseOptions(
-    apiKey: 'AIzaSyDKJMaUH2wyE6-ywT1DAOD39vFy4wD8TlE',
-    appId: '1:296013157420:web:79512477f4440aff5aed89',
-    messagingSenderId: '296013157420',
-    projectId: 'jembe-talk',
-    authDomain: 'jembe-talk.firebaseapp.com',
-    storageBucket: 'jembe-talk.firebasestorage.app',
-    measurementId: 'G-5MLMZP43MH',
+    apiKey: 'AIzaSyAT-L2IhMZsq264VR1ZDAiPi-S0eSGugc4',
+    appId: '1:93565364847:web:5f4eed3ca2017fc2d43b9a',
+    messagingSenderId: '93565364847',
+    projectId: 'jembe-talk-1',
+    authDomain: 'jembe-talk-1.firebaseapp.com',
+    databaseURL: 'https://jembe-talk-1-default-rtdb.firebaseio.com',
+    storageBucket: 'jembe-talk-1.firebasestorage.app',
+    measurementId: 'G-D6N9MMVEZT',
   );
 
   static const FirebaseOptions android = FirebaseOptions(
-    apiKey: 'AIzaSyDjOy1OTJoKg-Ts8QfCZm9cIWJRz5LXnS0',
-    appId: '1:296013157420:android:5f7d20a6ab639c4e5aed89',
-    messagingSenderId: '296013157420',
-    projectId: 'jembe-talk',
-    storageBucket: 'jembe-talk.firebasestorage.app',
+    apiKey: 'AIzaSyDlYA92-pX-P5Q1b6ZtJHx56uui9qCvtKM',
+    appId: '1:93565364847:android:a89b2ce8fd9a720ad43b9a',
+    messagingSenderId: '93565364847',
+    projectId: 'jembe-talk-1',
+    databaseURL: 'https://jembe-talk-1-default-rtdb.firebaseio.com',
+    storageBucket: 'jembe-talk-1.firebasestorage.app',
   );
 
   static const FirebaseOptions ios = FirebaseOptions(
-    apiKey: 'AIzaSyDKnSxRxVzvjcSWncl_lK5oKBNZfsk9PFs',
-    appId: '1:296013157420:ios:3d42b129386d34ed5aed89',
-    messagingSenderId: '296013157420',
-    projectId: 'jembe-talk',
-    storageBucket: 'jembe-talk.firebasestorage.app',
+    apiKey: 'AIzaSyDlPlxw20mp-JvwEar1gtA2cFeE86lmFiM',
+    appId: '1:93565364847:ios:de71dcb819ec45ded43b9a',
+    messagingSenderId: '93565364847',
+    projectId: 'jembe-talk-1',
+    databaseURL: 'https://jembe-talk-1-default-rtdb.firebaseio.com',
+    storageBucket: 'jembe-talk-1.firebasestorage.app',
     iosBundleId: 'com.example.jembeTalk',
   );
 
   static const FirebaseOptions macos = FirebaseOptions(
-    apiKey: 'AIzaSyDKnSxRxVzvjcSWncl_lK5oKBNZfsk9PFs',
-    appId: '1:296013157420:ios:3d42b129386d34ed5aed89',
-    messagingSenderId: '296013157420',
-    projectId: 'jembe-talk',
-    storageBucket: 'jembe-talk.firebasestorage.app',
-    iosBundleId: 'com.example.jembeTalk',
+    apiKey: 'AIzaSyDlPlxw20mp-JvwEar1gtA2cFeE86lmFiM',
+    appId: '1:93565364847:ios:d40323a6344762d7d43b9a',
+    messagingSenderId: '93565364847',
+    projectId: 'jembe-talk-1',
+    databaseURL: 'https://jembe-talk-1-default-rtdb.firebaseio.com',
+    storageBucket: 'jembe-talk-1.firebasestorage.app',
+    iosBundleId: 'com.example.agakino',
   );
 
   static const FirebaseOptions windows = FirebaseOptions(
-    apiKey: 'AIzaSyDKJMaUH2wyE6-ywT1DAOD39vFy4wD8TlE',
-    appId: '1:296013157420:web:dd41310f5e8876c95aed89',
-    messagingSenderId: '296013157420',
-    projectId: 'jembe-talk',
-    authDomain: 'jembe-talk.firebaseapp.com',
-    storageBucket: 'jembe-talk.firebasestorage.app',
-    measurementId: 'G-3GBW3P8XBP',
+    apiKey: 'AIzaSyAT-L2IhMZsq264VR1ZDAiPi-S0eSGugc4',
+    appId: '1:93565364847:web:e2888ad6ed480ca3d43b9a',
+    messagingSenderId: '93565364847',
+    projectId: 'jembe-talk-1',
+    authDomain: 'jembe-talk-1.firebaseapp.com',
+    databaseURL: 'https://jembe-talk-1-default-rtdb.firebaseio.com',
+    storageBucket: 'jembe-talk-1.firebasestorage.app',
+    measurementId: 'G-8QGL646MHH',
   );
+
 }

@@ -1,18 +1,27 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Theme applied to the Android Window while the process is starting when the OS's Dark Mode setting is off -->
-    <style name="LaunchTheme" parent="@android:style/Theme.Light.NoTitleBar">
-        <!-- Show a splash screen on the activity. Automatically removed when
-             the Flutter engine draws its first frame -->
+    <!-- Theme ikoreshwa App igifunguka (Splash Screen) -->
+    <style name="LaunchTheme" parent="Theme.AppCompat.Light.NoActionBar">
+        <!-- Ibi bituma amabuto ya telefone atazimira App igifunguka -->
+        <item name="android:windowFullscreen">false</item>
         <item name="android:windowBackground">@drawable/launch_background</item>
+        <item name="android:windowDrawsSystemBarBackgrounds">true</item>
     </style>
-    <!-- Theme applied to the Android Window as soon as the process has started.
-         This theme determines the color of the Android Window while your
-         Flutter UI initializes, as well as behind your Flutter UI while its
-         running.
 
-         This Theme is only used starting with V2 of Flutter's Android embedding. -->
-    <style name="NormalTheme" parent="@android:style/Theme.Light.NoTitleBar">
+    <!-- Theme ikoreshwa igihe App imaze gufunguka yose -->
+    <style name="NormalTheme" parent="Theme.AppCompat.Light.NoActionBar">
         <item name="android:windowBackground">?android:colorBackground</item>
+        
+        <!-- GUKOSORA ZOOM N'AMABUTO: -->
+        <!-- 1. Ibi bituma amabuto 3 (Back, Home, Recents) aguma agaragara neza -->
+        <item name="android:windowFullscreen">false</item>
+        
+        <!-- 2. Ibi bituma App itisunika nabi ngo irenge imipaka ya screen (Scale Fix) -->
+        <item name="android:windowDrawsSystemBarBackgrounds">true</item>
+        <item name="android:windowLayoutInDisplayCutoutMode">never</item>
+        
+        <!-- 3. Ibi bituma Navigation Bar yo hasi iba transparent kugira ngo amabuto aboneke -->
+        <item name="android:navigationBarColor">#00000000</item>
+        <item name="android:windowContentOverlay">@null</item>
     </style>
 </resources>

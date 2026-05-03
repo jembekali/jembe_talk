@@ -33,6 +33,8 @@ class LanguageProvider with ChangeNotifier {
       'select_tv': 'Hitamwo TV ushaka kuraba',
       'no_chats': 'Nta biganiro bibonetse.',
       'winner': 'UWATSINZE',
+      'wallpaper_change': 'Hindura',
+'wallpaper_delete': 'Futa',
       'typing': 'ariko arandika...',
       'recording': 'ariko afata ijwi...',
       'error_generic': 'Habaye ikosa:',
@@ -51,6 +53,8 @@ class LanguageProvider with ChangeNotifier {
       'time_ago_days_suffix': 'd',
       'unknown_time': 'Igihe ntikizwi',
       'loading_tv_prompt': 'Mukanya gato urabona:',
+      'wallpaper_change': 'Hindura',
+'wallpaper_delete': 'Futa',
 
       // --- Welcome & Auth ---
       'welcome_terms': "Imbere yuko winjira, banza wemere ko utazokoresha uru rubuga mubintu vyose vyigisha irwanko canke ibintu vyose bitandukanye n'umuco w'akarere k'ibiyaga binini. Utegerezwa kandi kuba wemeye ko utazokoresha uru rubuga mu bintu birenga ku mategeko y'Igihugu cawe.",
@@ -68,6 +72,15 @@ class LanguageProvider with ChangeNotifier {
       'change_phone_btn': 'Hindura nimero ya telefone',
       'error_invalid_code': 'Code wanditse si yo.',
       'error_signin': 'Ikosa ryo kwinjira:',
+      "dialog_yes": "Ego",
+"dialog_no": "Oya",
+"chat_edited_label": "(Cakosowe)",
+"chat_edit_action": "Gukosora",
+"chat_editing_status": "Uriko urahindura ubutumwa...",
+"chat_you": "Wewe",
+"chat_delete_confirm_dialog_title": "Gufuta ubu butumwa?",
+'chat_security_notice': 'Ibiganiro vyose birakingiwe (End-to-end encrypted). Nta muntu n’umwe ashobora kubisoma atari mwebwe gusa muriko muraganira.',
+'ludo_coming_soon': 'Ludo: uyu mukino uzoboneka vuba.',
 
       // --- Profile Setup & Edit ---
       'profile_setup_title': 'Tunganya Umwirondoro Wawe',
@@ -109,6 +122,7 @@ class LanguageProvider with ChangeNotifier {
 
       // --- Change Number ---
       'chg_num_title': 'Guhindura Nimero',
+      
       'chg_num_header': 'Guhindura nimero yawe ya terefone',
       'chg_num_info1': 'Guhindura nimero bizokwimura amakuru ya konte yawe yose bishigwe kuri nimero nshasha.',
       'chg_num_info2': 'Imbere yo kubandanya, ni ngombwa ko wemeza neza ko nimero yawe nshasha ishobora kwakira SMS.',
@@ -135,6 +149,8 @@ class LanguageProvider with ChangeNotifier {
       'delete_acc_dialog_msg': 'Iki gikorwa ntigisubigwako. Amakuru yawe yose arafutwa burundu.',
       'delete_acc_dialog_no': 'OYA',
       'delete_acc_dialog_yes': 'EGO, FUTA',
+      'wallpaper_change': 'Hindura',
+      'wallpaper_delete': 'Futa',
 
       // --- Chat Settings (Detailed) ---
       'chat_title': 'Ibiganiro',
@@ -164,7 +180,7 @@ class LanguageProvider with ChangeNotifier {
       'font_size_xlarge': 'Nini cane',
       'font_default': 'Ibisanzwe (System Default)',
       'theme_title': 'Amabara',
-      'theme_header': 'Hitamo uko porogaramu igaragara',
+      'theme_header': 'Hitamwo uko porogaramu igaragara',
       'theme_light': 'Umuco (Light)',
       'theme_dark': 'Umwijima (Dark)',
       'theme_system': 'Uko Telefone Iteye (System)',
@@ -306,7 +322,7 @@ class LanguageProvider with ChangeNotifier {
       'chat_clear_chat_dialog_no': 'Oya',
       'chat_clear_chat_dialog_yes': 'Ego, Futa',
       'chat_coming_soon_game': 'Uyu mukino uzoboneka vuba.',
-      'chat_invalid_audio_file': 'Iyi si Audio ariko. Hitamo neza.',
+      'chat_invalid_audio_file': 'Iyi si Audio ariko. Hitamwo neza.',
       'chat_change_wallpaper_dialog_title': 'Ifoto y\'Inyuma',
       'chat_change_wallpaper_option': 'Hindura ifoto',
       'chat_remove_wallpaper_option': 'Futa ifoto',
@@ -549,23 +565,32 @@ class LanguageProvider with ChangeNotifier {
       'sync_service_trigger_log': '[SyncService] triggerSync yahamagawe.',
       'sync_service_sync_busy_log': '[SyncService] Indi sync y\'ubutumwa iracyakora, turarinze.',
       'sync_service_checking_messages_log': '[SyncService] Ndatanguye kugenzura ubutumwa butaragenda...',
-      'sync_service_found_messages_log': '[SyncService] Nsanze ubutumwa butegereje koherezwa.',
-      'sync_service_processing_message_log': '[SyncService] Ndimo kugenzura ubutumwa:',
-      'sync_service_thumbnail_uploaded_log': '[SyncService] Thumbnail yoherejwe neza kuri ubutumwa:',
-      'sync_service_thumbnail_error_log': '!!!!!! Ikosa mu kohereza thumbnail ya',
-      'sync_service_uploading_file_log': '[SyncService] Ifayiri nini ibonetse. Ndatangiye kohereza.',
-      'sync_service_file_uploaded_log': '[SyncService] Dosiye nini yoherejwe neza:',
+      'sync_service_found_messages_log': '[SyncService] Nsanze ubutumwa butegereje kurungikwa.',
+      'sync_service_processing_message_log': '[SyncService] Ndiko ngenzura ubutumwa:',
+      'sync_service_thumbnail_uploaded_log': '[SyncService] Thumbnail yarungitwe neza kuri ubutumwa:',
+      'sync_service_thumbnail_error_log': '!!!!!! Ikosa mu mukurungika thumbnail ya',
+      'sync_service_uploading_file_log': '[SyncService] Ifayiri nini ibonetse. Ndatangiye kurungika.',
+      'sync_service_file_uploaded_log': '[SyncService] Dosiye nini yarungitswe neza:',
       'sync_service_message_sent_log': '[SyncService] Ubutumwa rurungitswe neza kuri Firestore.',
-      'sync_service_upload_cancelled_log': 'Kwohereza ubutumwa byahagaritswe n\'umukoresha. Status ishyizwe kuri \'canceled\'.',
+      'sync_service_upload_cancelled_log': 'Kurungika ubutumwa vyahagaritswe n\'umukoresha. Status ishizwe kuri \'canceled\'.',
       'sync_service_generic_error_log': '!!!!!! Habaye ikibazo mu kurungika ubutumwa',
       'sync_service_completed_log': '[SyncService] Igikorwa co kurungika ubutumwa kirangiye.',
-      'sync_service_restarting_log': '[SyncService] Hari akandi kazi kategereje. Ndongera ntangire bundi bushya.',
+      'sync_service_restarting_log': '[SyncService] Hari akandi kazi kategereje. Ndongera ntangure bundi bushasha.',
       'media_upload_error_creating_thumbnail': 'Gukora thumbnail y\'ifoto vyanse',
       'media_upload_error_creating_video_thumbnail': 'Gukora thumbnail ya video vyanse',
-      'media_upload_contact_no_number': 'Contact wahisemo nta nomero ya telefone ifise.',
+      'media_upload_contact_no_number': 'Contact wahisemwo nta nomero ya telefone ifise.',
       'media_upload_no_contact_permission': 'Ntushobora kurungika contact utaduhaye uburenganzira.',
-      'media_upload_error_picking_contact': 'Habaye ikosa mu guhitamo contact',
-    },
+      'media_upload_error_picking_contact': 'Habaye ikosa mu guhitamwo contact',
+    // ... andi majambo ...
+  'mon': 'Kuwa mbere',
+  'tue': 'Kuwa kabiri',
+  'wed': 'Kuwa gatatu',
+  'thu': 'Kuwa kane',
+  'fri': 'Kuwa gatanu',
+  'sat': 'Kuwa gatandatu',
+  'sun': 'Kuwa mungu',
+  // ...
+},
 
     // ============================================================
     // 2. E N G L I S H (en)
@@ -719,7 +744,8 @@ class LanguageProvider with ChangeNotifier {
       'theme_dark': 'Dark',
       'theme_system': 'System Default',
       'theme_system_sub': 'App will follow your system settings',
-
+'wallpaper_change': 'Change',
+'wallpaper_delete': 'Delete',
       // --- Notifications Settings ---
       'notif_conv_tones': 'Conversation Tones',
       'notif_conv_tones_sub': 'Play sounds for incoming and outgoing messages.',
@@ -953,6 +979,8 @@ class LanguageProvider with ChangeNotifier {
       'search_users_prompt': 'Start typing to search.',
       'search_users_no_results': 'No person named',
       'search_users_unknown_name': 'Unknown name',
+      'wallpaper_change': 'Change',
+      'wallpaper_delete': 'Delete',
 
       // --- Tangaza Star ---
       'screen_title': 'Tangaza Star',
@@ -1049,6 +1077,8 @@ class LanguageProvider with ChangeNotifier {
       'star_win_default_title': 'You became a Star!',
       'star_win_default_body': 'Congratulations on this win.',
       'star_win_tap_to_see': 'Tap here to see your amazing post!',
+      'chat_security_notice': 'Messages are end-to-end encrypted. No one outside of this chat, not even Jembe Talk, can read them.',
+'ludo_coming_soon': 'Ludo: this game will be available soon.',
 
       // --- Video Editor & Post Creation ---
       'video_editor_title': 'Edit Video',
@@ -1064,6 +1094,13 @@ class LanguageProvider with ChangeNotifier {
       're_edit_video_title': 'Re-edit Video?',
       're_edit_video_body': 'You have already edited this video. If you proceed, all your current edits will be lost. Do you want to continue?',
       're_edit_video_confirm': 'Yes, Re-edit',
+      "dialog_yes": "Yes",
+"dialog_no": "No",
+"chat_edited_label": "(Edited)",
+"chat_edit_action": "Edit",
+"chat_editing_status": "Editing message...",
+"chat_you": "You",
+"chat_delete_confirm_dialog_title": "Delete this message?",
       
       // --- Dame/Games (Restored from V1) ---
       'dame_sound_error': 'Error initializing sounds',
@@ -1115,7 +1152,18 @@ class LanguageProvider with ChangeNotifier {
       'media_upload_contact_no_number': 'The selected contact has no phone number.',
       'media_upload_no_contact_permission': 'Cannot send contact without permission.',
       'media_upload_error_picking_contact': 'An error occurred while picking the contact',
-    },
+      'wallpaper_change': 'Change',
+'wallpaper_delete': 'Delete',
+       // ...
+  'mon': 'Monday',
+  'tue': 'Tuesday',
+  'wed': 'Wednesday',
+  'thu': 'Thursday',
+  'fri': 'Friday',
+  'sat': 'Saturday',
+  'sun': 'Sunday',
+  // ...
+},
 
     // ============================================================
     // 3. F R A N C A I S (fr)
@@ -1332,6 +1380,8 @@ class LanguageProvider with ChangeNotifier {
       'security_intro': 'Jembe Talk s\'engage à protéger votre sécurité. Toutes les conversations sont chiffrées de bout en bout.',
       'security_switch_title': 'Afficher les notifications de sécurité',
       'security_switch_sub': 'Envoyer une notification lorsque le code de sécurité d\'un contact change.',
+      'wallpaper_change': 'Modifier',
+'wallpaper_delete': 'Supprimer',
 
       // --- Help & Support ---
       'help_title': 'Aide',
@@ -1356,6 +1406,8 @@ class LanguageProvider with ChangeNotifier {
       'my_feedback_title': 'Mes Messages',
       'my_feedback_login_prompt': 'Veuillez d\'abord vous connecter.',
       'my_feedback_no_messages': 'Vous n\'avez encore envoyé aucun message.',
+      'chat_security_notice': 'Les messages sont chiffrés de bout en bout. Personne en dehors de cette discussion ne peut les lire.',
+'ludo_coming_soon': 'Ludo : ce jeu sera bientôt disponible.',
 
       // --- Request Info & Report ---
       'req_info_title': 'Demander infos du compte',
@@ -1537,6 +1589,8 @@ class LanguageProvider with ChangeNotifier {
       'likes_label': 'J\'aime',
       'comments_label': 'Commentaires',
       'views_label': 'Vues',
+      'wallpaper_change': 'Modifier',
+'wallpaper_delete': 'Supprimer',
       'profile_error_no_current_user': 'Aucun utilisateur actuel.',
       'profile_error_user_not_found': 'Cette personne n\'a pas pu être trouvée.',
       'profile_error_loading_data': 'Une erreur s\'est produite lors du chargement des données.',
@@ -1599,6 +1653,13 @@ class LanguageProvider with ChangeNotifier {
       'star_win_default_title': 'Tu es devenu une Star !',
       'star_win_default_body': 'Félicitations pour cette victoire.',
       'star_win_tap_to_see': 'Appuyez ici pour voir votre superbe publication !',
+      "dialog_yes": "Oui",
+"dialog_no": "Non",
+"chat_edited_label": "(Modifié)",
+"chat_edit_action": "Modifier",
+"chat_editing_status": "Modification du message...",
+"chat_you": "Vous",
+"chat_delete_confirm_dialog_title": "Supprimer ce message ?",
 
       // --- Video Editor & Post Creation ---
       'video_editor_title': 'Modifier la Vidéo',
@@ -1665,7 +1726,18 @@ class LanguageProvider with ChangeNotifier {
       'media_upload_contact_no_number': 'Le contact sélectionné n\'a pas de numéro de téléphone.',
       'media_upload_no_contact_permission': 'Impossible d\'envoyer le contact sans autorisation.',
       'media_upload_error_picking_contact': 'Une erreur s\'est produite lors de la sélection du contact',
-    },
+     // ...
+  'mon': 'Lundi',
+  'tue': 'Mardi',
+  'wed': 'Mercredi',
+  'thu': 'Jeudi',
+  'fri': 'Vendredi',
+  'sat': 'Samedi',
+  'sun': 'Dimanche',
+  'wallpaper_change': 'Modifier',
+  'wallpaper_delete': 'Supprimer',
+  // ...
+},
 
     // ============================================================
     // 4. K I S W A H I L I (sw)
@@ -1701,6 +1773,8 @@ class LanguageProvider with ChangeNotifier {
       'time_ago_days_suffix': 's',
       'unknown_time': 'Wakati haujulikani',
       'loading_tv_prompt': 'Utaanza kutazama hivi karibuni:',
+      'wallpaper_change': 'Badilisha',
+      'wallpaper_delete': 'Futa',
 
       // --- Welcome & Auth ---
       'welcome_terms': "Kabla ya kuingia, lazima ukubali kutotumia jukwaa hili kwa chochote kinachochochea chuki au kilicho kinyume na utamaduni wa eneo la Maziwa Makuu. Lazima pia ukubali kutovunja sheria za nchi yako.",
@@ -2149,6 +2223,7 @@ class LanguageProvider with ChangeNotifier {
       'star_win_default_title': 'Umekuwa Nyota!',
       'star_win_default_body': 'Hongera kwa ushindi huu.',
       'star_win_tap_to_see': 'Gusa hapa kuona chapisho lako zuri!',
+      
 
       // --- Video Editor & Post Creation ---
       'video_editor_title': 'Hariri Video',
@@ -2216,6 +2291,21 @@ class LanguageProvider with ChangeNotifier {
       'media_upload_no_contact_permission': 'Haiwezi kutuma mwasiliani bila ruhusa.',
       'media_upload_error_picking_contact': 'Kosa limetokea wakati wa kuchagua mwasiliani',
       'contact_us_title': 'Wasiliana Nasi',
+      'wallpaper_change': 'Badilisha',
+'wallpaper_delete': 'Futa',
+'wallpaper_change': 'Badilisha',
+'wallpaper_delete': 'Futa',
+"dialog_yes": "Ndiyo",
+"dialog_no": "Hapana",
+"chat_edited_label": "(Imehaririwa)",
+"chat_edit_action": "Hariri",
+"chat_editing_status": "Unahariri ujumbe...",
+"chat_you": "Wewe",
+"chat_delete_confirm_dialog_title": "Futa ujumbe huu?",
+'chat_security_notice': 'Ujumbe umefumbwa kutoka mwanzo hadi mwisho. Hakuna mtu yeyote nje ya mazungumzo haya anayeweza kuusoma.',
+'ludo_coming_soon': 'Ludo: mchezo huu utapatikana hivi karibuni.',
+
+
       'feedback_details_title': 'Maelezo ya Maoni',
       'feedback_your_message': 'Ujumbe Wako',
       'feedback_admin_reply': 'Jibu la Msimamizi',
@@ -2225,6 +2315,15 @@ class LanguageProvider with ChangeNotifier {
       'feedback_no_details': 'Maelezo ya maoni hayakupatikana.',
       'chg_num_verify_title': 'Thibitisha Nambari Mpya',
       'chg_num_verify_subtitle': 'Weka nambari tuliyotuma kwa',
+      // ...
+  'mon': 'Jumatatu',
+  'tue': 'Jumanne',
+  'wed': 'Jumatano',
+  'thu': 'Alhamisi',
+  'fri': 'Ijumaa',
+  'sat': 'Jumamosi',
+  'sun': 'Jumapili',
+  // ...
     },
   };
 

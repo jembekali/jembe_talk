@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:jembe_talk/language_provider.dart';
 import 'package:jembe_talk/phone_auth_screen.dart';
-import 'package:page_transition/page_transition.dart'; // <<<--- IMPORT YA PAKI NSHASHA
+import 'package:page_transition/page_transition.dart';
+import 'package:jembe_talk/app_translations.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class WelcomeScreen extends StatefulWidget {
   const WelcomeScreen({super.key});
@@ -12,7 +14,6 @@ class WelcomeScreen extends StatefulWidget {
 }
 
 class _WelcomeScreenState extends State<WelcomeScreen> {
-  // Iyi variable idufasha kumenya niba menu yugaye canke yuguruye
   bool _isLanguageMenuOpen = false;
 
   void _toggleLanguageMenu() {
@@ -21,52 +22,51 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
     });
   }
 
+  Future<void> _launchURL() async {
+    final Uri url = Uri.parse('https://sites.google.com/view/jembe-talk-policy/home');
+    if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
+      throw Exception('Could not launch $url');
+    }
+  }
+
   String _getLanguageName(String code) {
     switch (code) {
-      case 'ki': return 'Kirundi';
+      case 'ki': return 'Ikirundi';
       case 'sw': return 'Kiswahili';
       case 'en': return 'English';
       case 'fr': return 'Français';
-      default: return 'Kirundi';
+      default: return 'Ikirundi';
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final lang = Provider.of<LanguageProvider>(context);
+    final String c = lang.currentLanguage;
 
     return Scaffold(
       backgroundColor: const Color.fromARGB(255, 28, 41, 53),
       body: SafeArea(
         child: Stack(
           children: [
-            // GICE C'INYUMA (Logo, Text, Button)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 10.0),
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: <Widget>[
-                  
                   const SizedBox(height: 50), 
-                  
                   Expanded(
                     flex: 3,
                     child: Center(
-                      child: Image.asset(
-                        'assets/images/welcome_logo.png',
-                        height: 250.0,
-                      ),
+                      child: Image.asset('assets/images/welcome_logo.png', height: 250.0),
                     ),
                   ),
-                  
                   Expanded(
-                    flex: 3, 
+                    flex: 4, 
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.end,
                       children: [
-                        
-                        // AGASANDUGU K'IMENYEKESHA
                         Container(
                           padding: const EdgeInsets.all(16.0),
                           decoration: BoxDecoration(
@@ -82,44 +82,38 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                                   const Icon(Icons.info_outline, color: Colors.white, size: 20),
                                   const SizedBox(width: 8),
                                   Text(
-                                    lang.t('terms_title'),
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 14,
-                                    ),
+                                    AppTranslations.translate(c, 'terms_title'),
+                                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
                                   ),
                                 ],
                               ),
                               const SizedBox(height: 8),
                               Text(
-                                lang.t('welcome_terms'), 
+                                AppTranslations.translate(c, 'welcome_terms'), 
                                 textAlign: TextAlign.center,
-                                style: const TextStyle(
-                                  color: Colors.white, 
-                                  fontSize: 13.0,
-                                  height: 1.4, 
-                                  fontWeight: FontWeight.w400,
+                                style: const TextStyle(color: Colors.white, fontSize: 13.0, height: 1.4),
+                              ),
+                              TextButton(
+                                onPressed: _launchURL,
+                                child: Text(
+                                  AppTranslations.translate(c, 'read_more'),
+                                  style: const TextStyle(color: Colors.tealAccent, fontWeight: FontWeight.bold, decoration: TextDecoration.underline),
                                 ),
                               ),
                             ],
                           ),
                         ),
-                        // ----------------------------------------
-
                         const SizedBox(height: 25.0),
-                        
                         ElevatedButton(
                           onPressed: () {
-                            // <<<--- HANO NI HO DUKORESHWA ANIMATION Y'UMUYAGA --->>>
                             Navigator.push(
                               context,
                               PageTransition(
-                                type: PageTransitionType.rightToLeftWithFade, // Ica iburyo iza ibumoso ivanze no gukendera
+                                type: PageTransitionType.rightToLeftWithFade,
                                 child: const PhoneAuthScreen(),
-                                duration: const Duration(milliseconds: 1000), // Isegonda 1 (Buke buke)
-                                curve: Curves.easeInOut, // Kugenda nk'umuyaga (byihuta gato hagati, bigatinda kurangira)
-                                isIos: true, // Bituma bigenda neza kuri iOS na Android
+                                duration: const Duration(milliseconds: 1000),
+                                curve: Curves.easeInOut,
+                                isIos: true,
                               ),
                             );
                           },
@@ -127,17 +121,12 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                             backgroundColor: Colors.white,
                             foregroundColor: const Color.fromARGB(255, 21, 29, 65),
                             minimumSize: const Size.fromHeight(55),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(30.0),
-                            ),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30.0)),
                             elevation: 5.0,
                           ),
                           child: Text(
-                            lang.t('login_phone_btn'),
-                            style: const TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                            ),
+                            AppTranslations.translate(c, 'login_phone_btn'),
+                            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                           ),
                         ),
                         const SizedBox(height: 15.0),
@@ -147,11 +136,9 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                 ],
               ),
             ),
-
-            // MENU Y'INDIMI NA ANIMATION
+            
             Positioned(
-              top: 10,
-              right: 24,
+              top: 10, right: 24,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
@@ -169,13 +156,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                         children: [
                           const Icon(Icons.language, color: Colors.white, size: 20),
                           const SizedBox(width: 8),
-                          Text(
-                            _getLanguageName(lang.currentLanguage),
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
+                          Text(_getLanguageName(lang.currentLanguage), style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
                           const SizedBox(width: 4),
                           AnimatedRotation(
                             turns: _isLanguageMenuOpen ? 0.5 : 0, 
@@ -186,31 +167,20 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                       ),
                     ),
                   ),
-
                   const SizedBox(height: 5),
-
                   AnimatedContainer(
                     duration: const Duration(milliseconds: 400),
                     curve: Curves.fastOutSlowIn,
                     height: _isLanguageMenuOpen ? 180 : 0, 
                     width: 150,
-                    decoration: BoxDecoration(
-                      color: const Color.fromARGB(255, 20, 24, 75), 
-                      borderRadius: BorderRadius.circular(15),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.2),
-                          blurRadius: 10,
-                          offset: const Offset(0, 5),
-                        ),
-                      ],
-                    ),
+                    decoration: BoxDecoration(color: const Color.fromARGB(255, 20, 24, 75), borderRadius: BorderRadius.circular(15)),
                     clipBehavior: Clip.hardEdge, 
                     child: SingleChildScrollView(
                       physics: const NeverScrollableScrollPhysics(),
                       child: Column(
                         children: [
-                          _buildLangItem(context, lang, 'ki', 'Kirundi'),
+                          // IKIRUNDI NI CYO KIZA MBERE
+                          _buildLangItem(context, lang, 'ki', 'Ikirundi'),
                           _buildLangItem(context, lang, 'sw', 'Kiswahili'),
                           _buildLangItem(context, lang, 'en', 'English'),
                           _buildLangItem(context, lang, 'fr', 'Français'),
@@ -232,9 +202,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
     return InkWell(
       onTap: () {
         lang.changeLanguage(code);
-        setState(() {
-          _isLanguageMenuOpen = false;
-        });
+        setState(() => _isLanguageMenuOpen = false);
       },
       child: Container(
         width: double.infinity,
@@ -243,15 +211,8 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text(
-              name,
-              style: TextStyle(
-                color: Colors.white,
-                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-              ),
-            ),
-            if (isSelected)
-              const Icon(Icons.check, color: Colors.white, size: 16),
+            Text(name, style: TextStyle(color: Colors.white, fontWeight: isSelected ? FontWeight.bold : FontWeight.normal)),
+            if (isSelected) const Icon(Icons.check, color: Colors.white, size: 16),
           ],
         ),
       ),

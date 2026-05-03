@@ -8,7 +8,6 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
-// Loading ya Key Properties (Imeze neza)
 val keyPropertiesFile = rootProject.file("key.properties")
 val keyProperties = Properties()
 if (keyPropertiesFile.exists()) {
@@ -16,18 +15,18 @@ if (keyPropertiesFile.exists()) {
 }
 
 android {
-    namespace = "com.example.jembe_talk"
-
-    compileSdk = 36
-    ndkVersion = "27.0.12077973"
+    namespace = "com.jembetalk.app"
+    
+    compileSdk = 35 
 
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_11
-        targetCompatibility = JavaVersion.VERSION_11
+        isCoreLibraryDesugaringEnabled = true
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
     }
 
     kotlinOptions {
-        jvmTarget = "11"
+        jvmTarget = "17"
     }
 
     signingConfigs {
@@ -36,29 +35,34 @@ android {
                 storeFile = rootProject.file(keyProperties["storeFile"] as String)
                 storePassword = keyProperties["storePassword"] as String
                 keyAlias = keyProperties["keyAlias"] as String
-                keyPassword = keyProperties["keyPassword"] as String
+                keyPassword = keyProperties["keyPassword"] as String // 🔥 HANO NAHAKOSOYE
             }
         }
     }
 
     defaultConfig {
-        applicationId = "com.example.jembe_talk"
+        applicationId = "com.jembetalk.app"
         minSdk = 24
-        targetSdk = flutter.targetSdkVersion
-        versionCode = 1
-        versionName = "1.0"
+        targetSdk = 35 
         
-        multiDexEnabled = true
+        // 🔥 Version 3 (Kugira ngo Play Store yemere fayili nshya)
+        versionCode = 13
+        versionName = "1.01"
+        
+        multiDexEnabled = true 
     }
 
     buildTypes {
         release {
             signingConfig = signingConfigs.getByName("release")
             
-            // >>>>> IBI NI BYO BIKEMURA IKIBAZO CYA "MissingPluginException" BURUNDU <<<<<
-            // Ibi bibwira Android ngo "Ntugasibe code ucyeka ko idakenewe"
-            isMinifyEnabled = false
+            isMinifyEnabled = false 
             isShrinkResources = false
+            
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
             
             lint.checkReleaseBuilds = false
             lint.abortOnError = false
@@ -67,8 +71,10 @@ android {
 }
 
 dependencies {
-    implementation("org.jetbrains.kotlin:kotlin-stdlib:1.8.20")
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.4")
     implementation("androidx.multidex:multidex:2.0.1")
+    implementation("androidx.core:core-ktx:1.10.1")
+    implementation(platform("com.google.firebase:firebase-bom:32.7.0"))
 }
 
 flutter {

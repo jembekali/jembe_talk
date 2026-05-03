@@ -1,14 +1,16 @@
-// lib/tangaza_star/comment_screen.dart (VERSION IKOSOYE)
+// lib/tangaza_star/comment_screen.dart
 
 import 'dart:async';
-import 'dart:convert';
+import 'dart:developer'; 
 import 'package:flutter/material.dart';
+import 'package:flutter/cupertino.dart'; 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:jembe_talk/services/database_helper.dart';
 import 'package:uuid/uuid.dart';
 import 'package:provider/provider.dart';
 import 'package:jembe_talk/language_provider.dart';
+import 'package:jembe_talk/post_translations.dart'; 
 import 'comment_bubble.dart';
 
 class CommentScreen extends StatefulWidget {
@@ -33,15 +35,13 @@ class _CommentScreenState extends State<CommentScreen> {
   StreamSubscription<QuerySnapshot>? _commentsSubscription;
   List<Map<String, dynamic>> _comments = [];
   bool _isLoading = true;
-  late int _commentCount;
 
   @override
   void initState() {
     super.initState();
-    _commentCount = widget.postData[DatabaseHelper.colCommentsCount] ?? 0;
-    _listenToComments();
-    _commentController.addListener(() {
-      if (mounted) setState(() {});
+    // Tanga akanya gato ngo context ibe ready
+    Future.delayed(Duration.zero, () {
+      _listenToComments();
     });
   }
 
@@ -53,292 +53,203 @@ class _CommentScreenState extends State<CommentScreen> {
   }
 
   void _listenToComments() {
-    final lang = Provider.of<LanguageProvider>(context, listen: false);
     if (!mounted) return;
-    setState(() { _isLoading = true; });
-
-    final postId = widget.postData[DatabaseHelper.colPostId];
-    final commentsStream = _firestore.collection('posts').doc(postId).collection('comments').orderBy('timestamp', descending: true).snapshots();
-
-    _commentsSubscription = commentsStream.listen((querySnapshot) async {
+    final postId = widget.postData[DatabaseHelper.colPostId] ?? widget.postData['id'];
+    
+    _commentsSubscription = _firestore
+        .collection('posts').doc(postId).collection('comments')
+        .orderBy('timestamp', descending: true).snapshots().listen((querySnapshot) async {
+      
       final userIds = querySnapshot.docs.map((doc) => doc.data()['userId'] as String?).where((id) => id != null).toSet().toList();
-        
       Map<String, dynamic> usersMap = {};
+      
       if (userIds.isNotEmpty) {
-        final usersSnapshot = await _firestore.collection('users').where(FieldPath.documentId, whereIn: userIds).get();
-        usersMap = {for (var doc in usersSnapshot.docs) doc.id: doc.data()};
+        try {
+          final usersSnapshot = await _firestore.collection('users').where(FieldPath.documentId, whereIn: userIds).get();
+          usersMap = {for (var doc in usersSnapshot.docs) doc.id: doc.data()};
+        } catch (e) { log("Error fetching users: $e"); }
       }
 
       final serverComments = querySnapshot.docs.map((doc) {
         final data = doc.data();
-        final authorId = data['userId'];
-        final authorData = usersMap[authorId];
-
+        final authorData = usersMap[data['userId']];
         return {
           DatabaseHelper.colCommentId: doc.id,
-          DatabaseHelper.colPostId: postId,
-          DatabaseHelper.colUserId: data['userId'],
-          DatabaseHelper.colUserName: authorData?['displayName'] ?? data['userName'] ?? lang.t('no_author_name'),
+          DatabaseHelper.colUserName: authorData?['displayName'] ?? data['userName'] ?? "User",
           DatabaseHelper.colText: data['text'],
           DatabaseHelper.colAudioUrl: data['audioUrl'],
           DatabaseHelper.colLikesCount: data['likes'] ?? 0,
-          DatabaseHelper.colLikedBy: '[]',
           DatabaseHelper.colTimestamp: (data['timestamp'] as Timestamp?)?.millisecondsSinceEpoch ?? DateTime.now().millisecondsSinceEpoch,
-          DatabaseHelper.colSyncStatus: 'synced',
+          DatabaseHelper.colUserId: data['userId'],
         };
       }).toList();
-
-      if (mounted) {
-        setState(() {
-          _comments = serverComments;
-          _isLoading = false;
-        });
-      }
-    }, onError: (error) {
-      if (mounted) {
-        setState(() { _isLoading = false; });
-      }
+      
+      if (mounted) setState(() { _comments = serverComments; _isLoading = false; });
     });
   }
 
   Future<void> _postComment() async {
-    final lang = Provider.of<LanguageProvider>(context, listen: false);
     final commentText = _commentController.text.trim();
     if (commentText.isEmpty || currentUser == null) return;
-
-    final postId = widget.postData[DatabaseHelper.colPostId];
-    final commentId = const Uuid().v4();
-
-    final serverCommentData = {
-      'text': commentText,
-      'userId': currentUser!.uid,
-      'userName': currentUser!.displayName ?? lang.t('no_author_name'),
-      'userImageUrl': currentUser!.photoURL,
-      'timestamp': FieldValue.serverTimestamp(),
-      'likes': 0,
-    };
-
+    final postId = widget.postData[DatabaseHelper.colPostId] ?? widget.postData['id'];
     _commentController.clear();
-    FocusScope.of(context).unfocus();
-
+    
     try {
-      final postRef = _firestore.collection('posts').doc(postId);
-      final commentRef = postRef.collection('comments').doc(commentId);
-
-      final batch = _firestore.batch();
-      batch.set(commentRef, serverCommentData);
-      batch.update(postRef, {'commentsCount': FieldValue.increment(1)});
-      
-      await batch.commit();
-      _signalInterest(postId);
-      
-    } catch (e) {
-      // Handle error, maybe show a snackbar
-    }
-  }
-
-  void _signalInterest(String postId) {
-    if (currentUser == null) return;
-    _firestore.collection('user_likes').add({'userId': currentUser!.uid, 'postId': postId});
-  }
-
-  Future<void> _toggleCommentLike(String commentId) async {
-    // Logic for liking a comment on the server
-  }
-
-  Future<void> _deleteComment(String commentId) async {
-    final postId = widget.postData[DatabaseHelper.colPostId];
-
-    try {
-      final postRef = _firestore.collection('posts').doc(postId);
-      final commentRef = postRef.collection('comments').doc(commentId);
-
-      final batch = _firestore.batch();
-      batch.delete(commentRef);
-      batch.update(postRef, {'commentsCount': FieldValue.increment(-1)});
-      await batch.commit();
-    } catch (e) {
-      // Handle error
-    }
-  }
-
-  Future<void> _editComment(String commentId, String newText) async {
-    try {
-      final postId = widget.postData[DatabaseHelper.colPostId];
-      await _firestore.collection('posts').doc(postId).collection('comments').doc(commentId).update({'text': newText});
-    } catch(e) {
-      // Handle error
-    }
-  }
-
-  Future<void> _showEditCommentDialog(String commentId, String currentText) async {
-    final lang = Provider.of<LanguageProvider>(context, listen: false);
-    final TextEditingController editController = TextEditingController(text: currentText);
-    return showDialog<void>(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: Text(lang.t('edit_comment_title')),
-          content: TextField(controller: editController, autofocus: true, maxLines: null, decoration: InputDecoration(hintText: lang.t('edit_comment_hint'))),
-          actions: <Widget>[
-            TextButton(child: Text(lang.t('dialog_cancel')), onPressed: () => Navigator.of(context).pop()),
-            TextButton(child: Text(lang.t('btn_save')), onPressed: () { Navigator.of(context).pop(); _editComment(commentId, editController.text.trim()); }),
-          ],
-        );
-      },
-    );
-  }
-
-  Future<void> _showDeleteConfirmation(String commentId) async {
-    final lang = Provider.of<LanguageProvider>(context, listen: false);
-    return showDialog<void>(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: Text(lang.t('delete_comment_title')), content: Text(lang.t('delete_comment_confirm')),
-          actions: <Widget>[
-            TextButton(child: Text(lang.t('dialog_no')), onPressed: () => Navigator.of(context).pop()),
-            TextButton(child: Text(lang.t('dialog_yes_delete'), style: const TextStyle(color: Colors.red)), onPressed: () { Navigator.of(context).pop(); _deleteComment(commentId); }),
-          ],
-        );
-      },
-    );
+      await _firestore.collection('posts').doc(postId).collection('comments').doc(const Uuid().v4()).set({
+        'text': commentText, 
+        'userId': currentUser!.uid, 
+        'timestamp': FieldValue.serverTimestamp(), 
+        'likes': 0
+      });
+      await _firestore.collection('posts').doc(postId).update({'commentsCount': FieldValue.increment(1)});
+    } catch (e) { log("Error posting: $e"); }
   }
 
   void _showCommentOptions(Map<String, dynamic> commentData) {
+    if (commentData[DatabaseHelper.colUserId] != currentUser?.uid) return;
     final lang = Provider.of<LanguageProvider>(context, listen: false);
-    final commentId = commentData[DatabaseHelper.colCommentId];
-    final isMyComment = commentData[DatabaseHelper.colUserId] == currentUser?.uid;
-    final isTextComment = commentData[DatabaseHelper.colAudioUrl] == null;
-    if (!isMyComment) return;
+    final String l = lang.currentLanguage;
+
     showModalBottomSheet(
-      context: context,
-      builder: (context) {
-        return Wrap(
-          children: <Widget>[
-            if (isTextComment)
-              ListTile(leading: const Icon(Icons.edit_outlined), title: Text(lang.t('edit_option')), onTap: () { Navigator.pop(context); _showEditCommentDialog(commentId, commentData[DatabaseHelper.colText] ?? ''); }),
-            ListTile(leading: const Icon(Icons.delete_outline, color: Colors.red), title: Text(lang.t('delete_option'), style: const TextStyle(color: Colors.red)), onTap: () { Navigator.pop(context); _showDeleteConfirmation(commentId); }),
-          ],
-        );
-      },
+      context: context, 
+      backgroundColor: const Color(0xFF1E293B), 
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))), 
+      builder: (context) => Wrap(
+        children: [
+          ListTile(
+            leading: const Icon(Icons.delete_outline, color: Colors.red), 
+            title: Text(
+              PostTranslations.t('delete_comment_confirm', l), 
+              style: const TextStyle(color: Colors.red, fontWeight: FontWeight.bold)
+            ),
+            onTap: () { Navigator.pop(context); _confirmDelete(commentData); }
+          )
+        ]
+      )
     );
   }
 
-  void _popWithResult() {
-    Navigator.of(context).pop(_commentCount);
+  void _confirmDelete(Map<String, dynamic> commentData) {
+    final lang = Provider.of<LanguageProvider>(context, listen: false);
+    final String l = lang.currentLanguage;
+
+    showCupertinoDialog(
+      context: context,
+      builder: (context) => CupertinoAlertDialog(
+        title: Text(PostTranslations.t('delete_comment_title', l)),
+        actions: [
+          CupertinoDialogAction(
+            child: Text(PostTranslations.t('delete_comment_cancel', l)), 
+            onPressed: () => Navigator.pop(context)
+          ),
+          CupertinoDialogAction(
+            isDestructiveAction: true,
+            child: Text(PostTranslations.t('delete_comment_confirm', l)), 
+            onPressed: () {
+              Navigator.pop(context);
+              _deleteComment(commentData[DatabaseHelper.colCommentId]);
+            }
+          ),
+        ],
+      )
+    );
+  }
+
+  Future<void> _deleteComment(String commentId) async {
+    final postId = widget.postData[DatabaseHelper.colPostId] ?? widget.postData['id'];
+    await _firestore.collection('posts').doc(postId).collection('comments').doc(commentId).delete();
+    await _firestore.collection('posts').doc(postId).update({'commentsCount': FieldValue.increment(-1)});
   }
 
   @override
   Widget build(BuildContext context) {
     final lang = Provider.of<LanguageProvider>(context);
-    final bool canSend = _commentController.text.trim().isNotEmpty;
-    final bool isKeyboardVisible = MediaQuery.of(context).viewInsets.bottom > 0;
+    final String l = lang.currentLanguage;
+    final keyboardHeight = MediaQuery.of(context).viewInsets.bottom;
 
-    return PopScope(
-      canPop: true,
-      onPopInvoked: (didPop) {
-        if (!didPop) {
-          _popWithResult();
-        }
-      },
-      child: Scaffold(
-        resizeToAvoidBottomInset: false,
-        backgroundColor: Colors.transparent,
-        appBar: AppBar(
-          title: Text("${lang.t('comments_title')} (${_comments.length})"),
-          backgroundColor: Colors.transparent,
-          elevation: 0,
-          leading: IconButton(
-            icon: const Icon(Icons.close),
-            onPressed: _popWithResult,
-          ),
-          bottom: PreferredSize(
-            preferredSize: const Size.fromHeight(1.0),
-            child: Container(
-              color: Colors.white.withOpacity(0.2),
-              height: 1.0,
-            ),
-          ),
+    // Hitamo Izina rya Title bitandukanye n'izina rya Profile (kugira ngo bibe professional)
+    String headerTitle = "Comments";
+    if (l == 'ki') headerTitle = "Ibitekerezo";
+    else if (l == 'sw') headerTitle = "Maoni";
+    else if (l == 'fr') headerTitle = "Commentaires";
+
+    return Material(
+      color: Colors.transparent,
+      child: Container(
+        decoration: const BoxDecoration(
+          color: Color(0xFF0F172A),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(25)),
         ),
-        body: Padding(
-          padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+        child: Padding(
+          padding: EdgeInsets.only(bottom: keyboardHeight), 
           child: Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Expanded(
-                child: isKeyboardVisible
-                    ? const SizedBox.shrink()
-                    : ClipRRect(
-                        child: _isLoading 
-                          ? const Center(child: CircularProgressIndicator())
-                          : _comments.isEmpty
-                              ? Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                                  Icon(Icons.chat_bubble_outline, size: 60, color: Colors.grey[400]),
-                                  const SizedBox(height: 16),
-                                  Text(lang.t('no_comments_yet'), style: TextStyle(fontSize: 18, color: Colors.grey[200])),
-                                  const SizedBox(height: 8),
-                                  Text(lang.t('be_the_first'), style: TextStyle(fontSize: 16, color: Colors.grey[300])),
-                                ]))
-                              : ListView.builder(
-                                  controller: widget.scrollController,
-                                  physics: const BouncingScrollPhysics(),
-                                  padding: const EdgeInsets.fromLTRB(8.0, 8.0, 8.0, 16.0),
-                                  itemCount: _comments.length,
-                                  itemBuilder: (context, index) {
-                                    final commentData = _comments[index];
-                                    final likedByRaw = commentData[DatabaseHelper.colLikedBy] as String?;
-                                    final List<dynamic> likedByList = (likedByRaw != null && likedByRaw.isNotEmpty) ? jsonDecode(likedByRaw) : [];
-                                    return CommentBubble(
-                                      userName: commentData[DatabaseHelper.colUserName] ?? lang.t('no_author_name'),
-                                      text: commentData[DatabaseHelper.colText], 
-                                      audioUrl: commentData[DatabaseHelper.colAudioUrl],
-                                      timestamp: commentData[DatabaseHelper.colTimestamp],
-                                      likesCount: commentData[DatabaseHelper.colLikesCount] ?? 0,
-                                      isLikedByMe: likedByList.contains(currentUser?.uid),
-                                      onLike: () => _toggleCommentLike(commentData[DatabaseHelper.colCommentId]),
-                                      isMyComment: commentData[DatabaseHelper.colUserId] == currentUser?.uid,
-                                      onShowOptions: () => _showCommentOptions(commentData),
-                                      syncStatus: commentData[DatabaseHelper.colSyncStatus],
-                                    );
-                                  },
-                                ),
-                      ),
+              Container(margin: const EdgeInsets.only(top: 10, bottom: 5), width: 40, height: 4, decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(10))),
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 10), 
+                child: Text(
+                  "$headerTitle (${_comments.length})", 
+                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)
+                )
               ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 8.0),
-                decoration: BoxDecoration(
-                  color: Colors.black.withOpacity(0.3),
-                ),
-                child: SafeArea(
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      Expanded(
-                        child: Container(
-                          decoration: BoxDecoration(
-                            color: Colors.black.withOpacity(0.2),
-                            borderRadius: BorderRadius.circular(24),
-                            border: Border.all(color: Colors.white.withOpacity(0.2))
-                          ),
-                          child: TextField(
-                            controller: _commentController,
-                            style: const TextStyle(color: Colors.white),
-                            textCapitalization: TextCapitalization.sentences,
-                            autocorrect: true,
-                            keyboardType: TextInputType.multiline,
-                            maxLines: null,
-                            decoration: InputDecoration(hintText: lang.t('comment_placeholder'), hintStyle: const TextStyle(color: Colors.white70), border: InputBorder.none, contentPadding: const EdgeInsets.symmetric( horizontal: 16, vertical: 10)),
-                          ),
+
+              Expanded(
+                child: _isLoading 
+                  ? const Center(child: CupertinoActivityIndicator(color: Colors.white))
+                  : _comments.isEmpty
+                    ? Center(child: Text(PostTranslations.t('profile_no_comments', l), style: const TextStyle(color: Colors.white38)))
+                    : ListView.builder(
+                        controller: widget.scrollController,
+                        padding: const EdgeInsets.only(left: 16, right: 16, bottom: 20),
+                        itemCount: _comments.length,
+                        itemBuilder: (context, index) => CommentBubble(
+                          userName: _comments[index][DatabaseHelper.colUserName],
+                          text: _comments[index][DatabaseHelper.colText], 
+                          timestamp: _comments[index][DatabaseHelper.colTimestamp],
+                          likesCount: _comments[index][DatabaseHelper.colLikesCount],
+                          isLikedByMe: false,
+                          onLike: () {},
+                          isMyComment: _comments[index][DatabaseHelper.colUserId] == currentUser?.uid,
+                          onShowOptions: () => _showCommentOptions(_comments[index]),
                         ),
                       ),
-                      const SizedBox(width: 8),
-                      IconButton(
-                        icon: const Icon(Icons.send),
-                        color: canSend ? Colors.lightGreenAccent : Colors.grey,
-                        onPressed: canSend ? _postComment : null,
+              ),
+
+              Container(
+                padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+                decoration: BoxDecoration(color: const Color(0xFF1E293B), border: Border(top: BorderSide(color: Colors.white.withOpacity(0.05)))),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Expanded(
+                      child: Container(
+                        decoration: BoxDecoration(color: Colors.black26, borderRadius: BorderRadius.circular(22), border: Border.all(color: Colors.white12)),
+                        child: TextField(
+                          controller: _commentController,
+                          style: const TextStyle(color: Colors.white, fontSize: 15),
+                          maxLines: 4, minLines: 1,
+                          keyboardType: TextInputType.multiline,
+                          decoration: InputDecoration(
+                            hintText: PostTranslations.t('edit_content_hint', l), 
+                            hintStyle: const TextStyle(color: Colors.white38, fontSize: 14), 
+                            border: InputBorder.none, 
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10)
+                          ),
+                          onChanged: (v) => setState(() {}),
+                        ),
                       ),
-                    ],
-                  ),
+                    ),
+                    const SizedBox(width: 8),
+                    GestureDetector(
+                      onTap: _commentController.text.trim().isNotEmpty ? _postComment : null,
+                      child: CircleAvatar(
+                        radius: 22,
+                        backgroundColor: _commentController.text.trim().isNotEmpty ? Colors.lightGreenAccent : Colors.white10,
+                        child: Icon(Icons.send_rounded, color: _commentController.text.trim().isNotEmpty ? Colors.black : Colors.white24, size: 20),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],

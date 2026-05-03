@@ -1,239 +1,219 @@
-// lib/forward_screen.dart (VERSION 13.8: With Search Functionality)
+// lib/forward_screen.dart (VERSION 2.1 - FIXED FOR INSTANT FORWARDING)
 
-import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:jembe_talk/services/database_helper.dart';
 import 'package:jembe_talk/services/sync_service.dart';
 import 'package:uuid/uuid.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:provider/provider.dart';
+import 'package:jembe_talk/language_provider.dart';
+import 'package:jembe_talk/post_translations.dart';
 
 class ForwardContact {
   final String userId;
   final String displayName;
-  final String? localPhotoPath;
   final String? photoUrl;
+  final String? localPhotoPath;
   final String? phoneNumber;
+  final int lastMessageTimestamp;
 
   ForwardContact({
-    required this.userId, 
-    required this.displayName,
-    this.localPhotoPath,
-    this.photoUrl,
-    this.phoneNumber,
+    required this.userId, required this.displayName,
+    this.photoUrl, this.localPhotoPath, this.phoneNumber,
+    this.lastMessageTimestamp = 0,
   });
-
-  factory ForwardContact.fromJson(Map<String, dynamic> json) {
-    return ForwardContact(
-      userId: json['userId'] ?? '',
-      displayName: json['displayName'] ?? 'Amazina ntazwi',
-      localPhotoPath: json['localPhotoPath'],
-      photoUrl: json['photoUrl'],
-      phoneNumber: json['phoneNumber'],
-    );
-  }
 }
 
 class ForwardScreen extends StatefulWidget {
   final List<Map<String, dynamic>> messagesToForward;
-
   const ForwardScreen({super.key, required this.messagesToForward});
-
   @override
   State<ForwardScreen> createState() => _ForwardScreenState();
 }
 
 class _ForwardScreenState extends State<ForwardScreen> {
-  
+  final DatabaseHelper _dbHelper = DatabaseHelper.instance;
+  final FirebaseAuth _auth = FirebaseAuth.instance;
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   List<ForwardContact> _allContacts = [];
   List<ForwardContact> _filteredContacts = [];
   final Set<String> _selectedUserIds = {};
   bool _isLoading = true;
-
+  bool _isSending = false; // ✅ Added to show loading while sending
   final TextEditingController _searchController = TextEditingController();
   bool _isSearching = false;
 
   @override
   void initState() {
     super.initState();
-    _loadContacts();
+    _loadAllData();
     _searchController.addListener(_filterContacts);
   }
-  
-  @override
-  void dispose() {
-    _searchController.removeListener(_filterContacts);
-    _searchController.dispose();
-    super.dispose();
+
+  Future<void> _loadAllData() async {
+    final currentUser = _auth.currentUser;
+    if (currentUser == null) return;
+    try {
+      final contactMapsFromDb = await _dbHelper.getJembeContacts();
+      List<ForwardContact> recentChats = [];
+      List<ForwardContact> otherContacts = [];
+
+      for (var map in contactMapsFromDb) {
+        if (map['userId'] == currentUser.uid) continue;
+        String userId = map['userId'];
+        List<String> ids = [currentUser.uid, userId]; ids.sort();
+        final lastMsg = await _dbHelper.getLastMessage(ids.join('_'));
+        final timestamp = lastMsg?['timestamp'] as int? ?? 0;
+
+        final contact = ForwardContact(
+          userId: userId, displayName: map['displayName'] ?? map['phoneNumber'] ?? 'User',
+          photoUrl: map['photoUrl'], localPhotoPath: map['localPhotoPath'],
+          phoneNumber: map['phoneNumber'], lastMessageTimestamp: timestamp,
+        );
+
+        if (timestamp > 0) recentChats.add(contact); else otherContacts.add(contact);
+      }
+      recentChats.sort((a, b) => b.lastMessageTimestamp.compareTo(a.lastMessageTimestamp));
+      otherContacts.sort((a, b) => a.displayName.compareTo(b.displayName));
+
+      if (mounted) setState(() { _allContacts = [...recentChats, ...otherContacts]; _filteredContacts = _allContacts; _isLoading = false; });
+    } catch (e) { if (mounted) setState(() => _isLoading = false); }
   }
 
-  Future<void> _loadContacts() async {
-    final prefs = await SharedPreferences.getInstance();
-    final jsonString = prefs.getString('forwarding_contacts');
-
-    if (jsonString == null) {
-      if (mounted) setState(() => _isLoading = false);
-      return;
-    }
-
-    final List<dynamic> jsonList = jsonDecode(jsonString);
-    final contacts = jsonList.map((json) => ForwardContact.fromJson(json)).toList();
-    
-    if(mounted) {
-      setState(() {
-        _allContacts = contacts;
-        _filteredContacts = contacts;
-        _isLoading = false;
-      });
-    }
-  }
-  
   void _filterContacts() {
     final query = _searchController.text.toLowerCase();
     setState(() {
-      _filteredContacts = _allContacts.where((contact) {
-        return contact.displayName.toLowerCase().contains(query);
-      }).toList();
+      _filteredContacts = _allContacts.where((contact) => contact.displayName.toLowerCase().contains(query) || (contact.phoneNumber?.contains(query) ?? false)).toList();
     });
   }
 
   void _toggleSelection(String userId) {
-    setState(() {
-      if (_selectedUserIds.contains(userId)) {
-        _selectedUserIds.remove(userId);
-      } else {
-        _selectedUserIds.add(userId);
-      }
-    });
+    if (_isSending) return;
+    setState(() { if (_selectedUserIds.contains(userId)) _selectedUserIds.remove(userId); else _selectedUserIds.add(userId); });
   }
 
-  Future<void> _forwardMessages() async {
-    if (_selectedUserIds.isEmpty) return;
-
-    final currentUser = FirebaseAuth.instance.currentUser;
-    if (currentUser == null) return;
-
-    for (final userId in _selectedUserIds) {
-      for (final originalMessage in widget.messagesToForward) {
-        final messageId = const Uuid().v4();
-        
-        List<String> ids = [currentUser.uid, userId];
-        ids.sort();
-        String chatRoomID = ids.join('_');
-        
-        final forwardedMessage = Map<String, dynamic>.from(originalMessage);
-        
-        forwardedMessage[DatabaseHelper.columnId] = messageId;
-        forwardedMessage[DatabaseHelper.columnChatRoomID] = chatRoomID;
-        forwardedMessage[DatabaseHelper.columnSenderID] = currentUser.uid;
-        forwardedMessage[DatabaseHelper.columnReceiverID] = userId;
-        forwardedMessage[DatabaseHelper.columnTimestamp] = DateTime.now().millisecondsSinceEpoch;
-        forwardedMessage[DatabaseHelper.columnStatus] = 'pending';
-        forwardedMessage[DatabaseHelper.columnReplyingTo] = null;
-
-        await DatabaseHelper.instance.saveMessage(forwardedMessage);
-      }
-    }
-
-    syncService.triggerSync();
+  // ✅ KOSORA LOGIC YO KOHEREZA
+  Future<void> _forwardMessages(String langCode) async {
+    if (_selectedUserIds.isEmpty || _isSending) return;
     
-    if (mounted) {
-      Navigator.of(context).pop();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Ubutumwa bwasangijwe abantu ${_selectedUserIds.length}.')),
-      );
+    setState(() => _isSending = true);
+
+    final currentUser = _auth.currentUser; 
+    if (currentUser == null) {
+      setState(() => _isSending = false);
+      return;
+    }
+
+    try {
+      // Gukoresha WriteBatch bituma ubutumwa bwose bugenda rimwe kuri Firestore (Faster)
+      final WriteBatch batch = _firestore.batch();
+
+      for (final userId in _selectedUserIds) {
+        for (final originalMessage in widget.messagesToForward) {
+          final messageId = const Uuid().v4();
+          List<String> ids = [currentUser.uid, userId]; 
+          ids.sort();
+          final String chatRoomId = ids.join('_');
+
+          // Kora kopi y'ubutumwa
+          final forwardedMessage = Map<String, dynamic>.from(originalMessage);
+          forwardedMessage['id'] = messageId;
+          forwardedMessage['chatRoomID'] = chatRoomId;
+          forwardedMessage['senderID'] = currentUser.uid;
+          forwardedMessage['receiverID'] = userId;
+          forwardedMessage['timestamp'] = DateTime.now().millisecondsSinceEpoch;
+          
+          // Niba ari Media ifite URL cyangwa ari Inyandiko isanzwe, byose bihabwa 'sent' kuko bihari
+          forwardedMessage['status'] = 'sent';
+
+          // 1. Shira muri Firestore Batch
+          DocumentReference msgRef = _firestore
+              .collection('chat_rooms')
+              .doc(chatRoomId)
+              .collection('messages')
+              .doc(messageId);
+          
+          batch.set(msgRef, forwardedMessage);
+
+          // 2. Bika muri SQLite (Hano twabika tutarindiriye ngo Firestore irangize)
+          await _dbHelper.saveMessage(forwardedMessage);
+        }
+      }
+
+      // Kohereza kuri Firestore byose icyarimwe
+      await batch.commit();
+
+      syncService.triggerSync();
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('${PostTranslations.t('shared_with', langCode)} ${_selectedUserIds.length}.'))
+        );
+        Navigator.of(context).pop(); 
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isSending = false);
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Error forwarding messages. Please try again.")));
+      }
     }
   }
 
-  AppBar _buildSearchAppBar() {
-    return AppBar(
-      leading: IconButton(
-        icon: const Icon(Icons.arrow_back),
-        onPressed: () {
-          setState(() {
-            _isSearching = false;
-            _searchController.clear();
-          });
-        },
-      ),
-      title: TextField(
-        controller: _searchController,
-        autofocus: true,
-        decoration: const InputDecoration(
-          hintText: 'Shakisha...',
-          border: InputBorder.none,
-        ),
-      ),
-      actions: [
-        IconButton(
-          icon: const Icon(Icons.close),
-          onPressed: () => _searchController.clear(),
-        )
-      ],
-    );
-  }
-
-  AppBar _buildDefaultAppBar() {
-    return AppBar(
-      title: const Text('Sangiza kuri...'),
-      actions: [
-        IconButton(
-          icon: const Icon(Icons.search),
-          onPressed: () {
-            setState(() {
-              _isSearching = true;
-            });
-          },
-        ),
-      ],
-    );
-  }
+  @override
+  void dispose() { _searchController.dispose(); super.dispose(); }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Scaffold(
-      appBar: _isSearching ? _buildSearchAppBar() : _buildDefaultAppBar(),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _filteredContacts.isEmpty
-          ? const Center(child: Text("Nta muntu abonetse."))
-          : ListView.builder(
-              itemCount: _filteredContacts.length,
-              itemBuilder: (context, index) {
-                final contact = _filteredContacts[index];
-                final userId = contact.userId;
-                final isSelected = _selectedUserIds.contains(userId);
-
-                ImageProvider? profileImageProvider;
-                if (contact.localPhotoPath != null && File(contact.localPhotoPath!).existsSync()) {
-                  profileImageProvider = FileImage(File(contact.localPhotoPath!));
-                } else if (contact.photoUrl != null) {
-                  profileImageProvider = NetworkImage(contact.photoUrl!);
-                }
-
-                return ListTile(
-                  leading: CircleAvatar(
-                    backgroundImage: profileImageProvider,
-                    child: profileImageProvider == null ? const Icon(Icons.person) : null,
-                  ),
-                  title: Text(contact.displayName),
-                  subtitle: Text(contact.phoneNumber ?? ''),
-                  trailing: isSelected
-                      ? Icon(Icons.check_circle, color: theme.colorScheme.primary)
-                      : const Icon(Icons.circle_outlined),
-                  onTap: () => _toggleSelection(userId),
-                );
-              },
-            ),
-      floatingActionButton: _selectedUserIds.isNotEmpty
-          ? FloatingActionButton(
-              onPressed: _forwardMessages,
-              backgroundColor: theme.colorScheme.primary,
-              child: const Icon(Icons.send),
-            )
-          : null,
+    final lang = Provider.of<LanguageProvider>(context);
+    final String langCode = lang.currentLanguage;
+    
+    return Stack(
+      children: [
+        Scaffold(
+          appBar: _isSearching 
+            ? AppBar(leading: IconButton(icon: const Icon(Icons.arrow_back), onPressed: () => setState(() { _isSearching = false; _searchController.clear(); })), title: TextField(controller: _searchController, autofocus: true, style: const TextStyle(color: Colors.white), decoration: InputDecoration(hintText: PostTranslations.t('search_people', langCode), hintStyle: const TextStyle(color: Colors.white70), border: InputBorder.none)))
+            : AppBar(title: Text(PostTranslations.t('forward_to', langCode)), actions: [IconButton(icon: const Icon(Icons.search), onPressed: () => setState(() => _isSearching = true))]),
+          body: _isLoading 
+            ? const Center(child: CircularProgressIndicator()) 
+            : _filteredContacts.isEmpty 
+              ? Center(child: Text(PostTranslations.t('no_one_found', langCode))) 
+              : ListView.builder(
+                  itemCount: _filteredContacts.length,
+                  itemBuilder: (context, index) {
+                    final contact = _filteredContacts[index];
+                    final bool isRecent = contact.lastMessageTimestamp > 0;
+                    bool showSectionHeader = (index == 0 && isRecent) || (index > 0 && isRecent == false && _filteredContacts[index-1].lastMessageTimestamp > 0);
+                    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        if (showSectionHeader) Padding(padding: const EdgeInsets.fromLTRB(16, 16, 16, 8), child: Text(isRecent ? PostTranslations.t('recent_chats', langCode) : PostTranslations.t('other_people', langCode), style: TextStyle(color: theme.colorScheme.primary, fontWeight: FontWeight.bold, fontSize: 13))),
+                        ListTile(
+                          leading: CircleAvatar(backgroundImage: contact.localPhotoPath != null && File(contact.localPhotoPath!).existsSync() ? FileImage(File(contact.localPhotoPath!)) : (contact.photoUrl != null ? NetworkImage(contact.photoUrl!) : null) as ImageProvider?, child: (contact.localPhotoPath == null && contact.photoUrl == null) ? const Icon(Icons.person) : null),
+                          title: Text(contact.displayName, style: const TextStyle(fontWeight: FontWeight.w500)),
+                          subtitle: Text(contact.phoneNumber ?? ''),
+                          trailing: Checkbox(value: _selectedUserIds.contains(contact.userId), onChanged: (_) => _toggleSelection(contact.userId), shape: const CircleBorder()),
+                          onTap: () => _toggleSelection(contact.userId),
+                        ),
+                    ]);
+                  },
+                ),
+          floatingActionButton: _selectedUserIds.isNotEmpty 
+            ? FloatingActionButton.extended(
+                onPressed: _isSending ? null : () => _forwardMessages(langCode), 
+                label: Text("${PostTranslations.t('forward_button', langCode)} (${_selectedUserIds.length})"), 
+                icon: _isSending ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)) : const Icon(Icons.send), 
+                backgroundColor: _isSending ? Colors.grey : theme.colorScheme.primary
+              ) 
+            : null,
+        ),
+        // Overlay kigaragaza ko biri koherezwa
+        if (_isSending)
+          Container(
+            color: Colors.black26,
+            child: const Center(child: CircularProgressIndicator()),
+          ),
+      ],
     );
   }
 }

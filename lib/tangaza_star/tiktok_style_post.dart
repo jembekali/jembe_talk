@@ -1,13 +1,23 @@
-// lib/tangaza_star/tiktok_style_post.dart (VERSION IVUGURUYE)
-
+import 'dart:async';
+import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:provider/provider.dart';
-import 'package:video_player/video_player.dart';
-import 'package:jembe_talk/services/database_helper.dart';
-import 'package:jembe_talk/tangaza_star/user_profile_screen.dart'; 
+import 'package:cached_video_player_plus/cached_video_player_plus.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:wakelock_plus/wakelock_plus.dart'; 
+import 'package:timeago/timeago.dart' as timeago;
+import 'package:dio/dio.dart';
+import 'package:path_provider/path_provider.dart';
+
+import '../services/database_helper.dart';
+import '../services/r2_service.dart';
+import '../services/file_storage_service.dart'; 
 import 'feed_manager.dart';
+import 'user_profile_screen.dart';
 import 'package:jembe_talk/language_provider.dart';
+import 'package:jembe_talk/post_translations.dart';
 
 class TiktokStylePost extends StatefulWidget {
   final Map<String, dynamic> postData;
@@ -17,7 +27,7 @@ class TiktokStylePost extends StatefulWidget {
   final VoidCallback onShare;
   final VoidCallback onDownload;
   final VoidCallback onReport;
-  final bool isPlaying;
+  final bool isVisible; 
 
   const TiktokStylePost({
     super.key,
@@ -28,7 +38,7 @@ class TiktokStylePost extends StatefulWidget {
     required this.onShare,
     required this.onDownload,
     required this.onReport,
-    required this.isPlaying,
+    required this.isVisible,
   });
 
   @override
@@ -36,420 +46,269 @@ class TiktokStylePost extends StatefulWidget {
 }
 
 class _TiktokStylePostState extends State<TiktokStylePost> with TickerProviderStateMixin {
-  VideoPlayerController? _controller;
-  bool _isPausedByUser = false;
-  bool _showPauseIcon = false;
-  
+  double _downloadProgress = 0.0; 
+  bool _isDownloading = false;
+  Timer? _viewTimer;
+  bool _isViewCounted = false;
   late AnimationController _likeAnimationController;
   late Animation<double> _likeAnimation;
   double _likeAnimationOpacity = 0.0;
 
-  late AnimationController _bottomSheetController;
-
   @override
   void initState() {
     super.initState();
-    _likeAnimationController = AnimationController(duration: const Duration(milliseconds: 700), vsync: this);
+    // Gushyiraho uburyo bw'igihe kigufi (e.g. 2h)
+    timeago.setLocaleMessages('en_short', timeago.EnShortMessages());
+    _likeAnimationController = AnimationController(duration: const Duration(milliseconds: 500), vsync: this);
     _likeAnimation = Tween<double>(begin: 0.8, end: 1.2).animate(CurvedAnimation(parent: _likeAnimationController, curve: Curves.elasticOut));
-    
-    _bottomSheetController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1500), 
-      reverseDuration: const Duration(milliseconds: 1000),
-    );
-
-    _setupController();
+    if (widget.isVisible) _startViewTimer();
   }
 
   @override
   void didUpdateWidget(covariant TiktokStylePost oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.postData[DatabaseHelper.colPostId] != oldWidget.postData[DatabaseHelper.colPostId]) {
-      oldWidget.isPlaying ? _controller?.pause() : null;
-      _setupController();
-    } else {
-      _updatePlayState();
-    }
-  }
-  
-  void _setupController() {
-    final feedManager = context.read<FeedManager>();
-    final postId = widget.postData[DatabaseHelper.colPostId] as String;
-    _controller = feedManager.getPreloadedControllerFor(postId);
-    _controller?.addListener(_updatePlayState);
-    _updatePlayState();
-  }
-
-  void _updatePlayState() {
-    if (!mounted) return;
-    if (_controller != null && _controller!.value.isInitialized) {
-      if (widget.isPlaying && !_isPausedByUser) {
-        if (!_controller!.value.isPlaying) {
-          _controller!.play();
-        }
-        _controller!.setVolume(1.0);
+    if (widget.isVisible != oldWidget.isVisible) {
+      if (widget.isVisible) {
+        _startViewTimer();
+        // ✅ NO AUTOPLAY: Hano ntago tinitiyayizinga video, bituma yerekana thumbnail gusa.
       } else {
-        if (_controller!.value.isPlaying) {
-          _controller!.pause();
+        _cancelViewTimer();
+        // ✅ GHOST AUDIO PREVENTION: Niba umuntu arenzeho post, hagarika buri kantu kose (Hard kill)
+        final fm = context.read<FeedManager>();
+        if (fm.activePostId == widget.postData[DatabaseHelper.colPostId]) {
+          fm.pauseAll(); 
         }
       }
-      if (mounted) setState(() {});
     }
   }
 
-  @override
-  void dispose() {
-    _controller?.removeListener(_updatePlayState);
-    if (_controller?.value.isPlaying ?? false) {
-      _controller?.pause();
-    }
-    _likeAnimationController.dispose();
-    _bottomSheetController.dispose(); 
-    super.dispose();
+  void _startViewTimer() {
+    if (_isViewCounted || !mounted) return;
+    _cancelViewTimer();
+    _viewTimer = Timer(const Duration(seconds: 5), () {
+      if (mounted && widget.isVisible && !_isViewCounted) {
+        _isViewCounted = true;
+        context.read<FeedManager>().markPostAsViewed(widget.postData[DatabaseHelper.colPostId]);
+      }
+    });
   }
-  
-  String? _getOptimizedUrl(String? originalUrl, {required bool isImage}) {
-    if (originalUrl == null || originalUrl.isEmpty) return null;
+
+  void _cancelViewTimer() { _viewTimer?.cancel(); _viewTimer = null; }
+
+  void _handleMainTap(FeedManager feedManager) {
+    final String postId = widget.postData[DatabaseHelper.colPostId];
+    final bool isVideo = widget.postData['networkVideoUrl'] != null;
+    if (isVideo) {
+      if (feedManager.activePostId == postId) {
+        feedManager.togglePlayback();
+      } else {
+        // Video itangira gusa iyo umuntu ayikanzeho (Click to Play)
+        feedManager.initializeAndPlayVideo(postId);
+      }
+    }
+  }
+
+  String _getTimeAgo(dynamic timestamp) {
+    if (timestamp == null) return "";
+    DateTime date;
     try {
-      final lang = Provider.of<LanguageProvider>(context, listen: false);
-      final uri = Uri.parse(originalUrl);
-      String path = uri.path;
-      String encodedFileName = path.split('%2F').last;
-      String originalFileName = Uri.decodeComponent(encodedFileName);
-      if (originalFileName.startsWith('optimized_') || originalFileName.startsWith('thumb_')) {
-        return originalUrl;
-      }
-      String baseName = originalFileName.contains('.') ? originalFileName.substring(0, originalFileName.lastIndexOf('.')) : originalFileName;
-      
-      String newPrefix = isImage ? 'optimized_' : 'thumb_';
-      String newExtension = isImage ? 'webp' : 'jpg';
-      
-      String newFileName = '$newPrefix$baseName.$newExtension';
-      String encodedNewFileName = Uri.encodeComponent(newFileName);
-      
-      return originalUrl.replaceAll(encodedFileName, encodedNewFileName);
-    } catch (e) {
-      debugPrint("${Provider.of<LanguageProvider>(context, listen: false).t('error_creating_optimized_url')} ($originalUrl): $e");
-      return originalUrl;
-    }
+      if (timestamp is Timestamp) date = timestamp.toDate();
+      else if (timestamp is int) date = DateTime.fromMillisecondsSinceEpoch(timestamp);
+      else if (timestamp is Map) {
+        final int seconds = timestamp['_seconds'] ?? (timestamp['seconds'] ?? 0);
+        date = DateTime.fromMillisecondsSinceEpoch(seconds * 1000);
+      } else if (timestamp is String) date = DateTime.parse(timestamp);
+      else return "";
+      return timeago.format(date, locale: 'en_short');
+    } catch (e) { return ""; }
   }
 
-  void _togglePlayPause() {
-    if (_controller == null || !_controller!.value.isInitialized) return;
-    setState(() {
-      if (_controller!.value.isPlaying) {
-        _controller!.pause();
-        _isPausedByUser = true;
-        _showPauseIcon = true;
-      } else {
-        _controller!.play();
-        _isPausedByUser = false;
-      }
-    });
-    if (_showPauseIcon) {
-      Future.delayed(const Duration(seconds: 1), () {
-        if (mounted) setState(() => _showPauseIcon = false);
-      });
-    }
-  }
-  
-  void _handleDoubleTap() {
-    if (_likeAnimationController.isAnimating) return;
-    if (!widget.isLiked) {
-      widget.onLike();
-    }
-    setState(() => _likeAnimationOpacity = 1.0);
-    _likeAnimationController.forward(from: 0.0).then((_) {
-      Future.delayed(const Duration(milliseconds: 500), () {
-        if (mounted) {
-          setState(() => _likeAnimationOpacity = 0.0);
-        }
-      });
-    });
-  }
-
-  void _showFullText(String fullText) {
-    showModalBottomSheet(
-      context: context,
-      transitionAnimationController: _bottomSheetController,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (context) => Container(
+  void _showFullNewsModal(BuildContext context, String title, String body, String langCode) {
+    showModalBottomSheet(context: context, isScrollControlled: true, backgroundColor: Colors.transparent, builder: (context) => Container(
         height: MediaQuery.of(context).size.height * 0.75, 
-        decoration: BoxDecoration(
-          color: Colors.blueGrey[900]!.withOpacity(0.95), 
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-        ),
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Center(child: Container(width: 50, height: 5, decoration: BoxDecoration(color: Colors.grey[400], borderRadius: BorderRadius.circular(10)))),
-            const SizedBox(height: 25),
-            Expanded(
-              child: SingleChildScrollView(
-                physics: const BouncingScrollPhysics(),
-                child: Text(fullText, style: const TextStyle(color: Colors.white, fontSize: 18, height: 1.6)),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
+        decoration: BoxDecoration(color: const Color(0xFF0F172A).withValues(alpha: 0.95), borderRadius: const BorderRadius.vertical(top: Radius.circular(35))),
+        padding: const EdgeInsets.fromLTRB(25, 20, 25, 25),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Center(child: Container(width: 45, height: 4, decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(10)))),
+          const SizedBox(height: 25),
+          if (title.isNotEmpty) Text(title, style: const TextStyle(color: Color(0xFFFFD700), fontSize: 18, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 15), const Divider(color: Colors.white10), const SizedBox(height: 15),
+          Expanded(child: SingleChildScrollView(child: Text(body, style: const TextStyle(color: Colors.white, fontSize: 16, height: 1.6)))),
+        ])));
   }
+
+  @override void dispose() { _cancelViewTimer(); _likeAnimationController.dispose(); super.dispose(); }
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.all(4.0),
-      child: Container(
-        decoration: BoxDecoration(
-          color: Colors.black,
-          borderRadius: BorderRadius.circular(30.0),
-        ),
-        clipBehavior: Clip.hardEdge,
-        child: GestureDetector(
-          onTap: _togglePlayPause,
-          onDoubleTap: _handleDoubleTap,
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              _buildMediaBackground(),
-              _buildForegroundContent(),
-              if (_showPauseIcon)
-                Center(child: Container(padding: const EdgeInsets.all(12), decoration: const BoxDecoration(color: Colors.black54, shape: BoxShape.circle), child: const Icon(Icons.pause, color: Colors.white, size: 45))),
-              Center(
-                child: AnimatedOpacity(
-                  opacity: _likeAnimationOpacity,
-                  duration: const Duration(milliseconds: 300),
-                  child: ScaleTransition(
-                    scale: _likeAnimation,
-                    child: const Icon(Icons.favorite, color: Colors.white, size: 90),
-                  ),
-                ),
-              ),
-              if (_controller != null && _controller!.value.isInitialized) _buildHorizontalProgressBar(),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-  
-  Widget _buildHorizontalProgressBar() {
-    if (_controller == null || !_controller!.value.isInitialized) return const SizedBox.shrink();
-    return Positioned(
-      bottom: 0, left: 0, right: 0,
-      child: VideoProgressIndicator(
-        _controller!,
-        allowScrubbing: true,
-        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
-        colors: const VideoProgressColors(
-          playedColor: Colors.white,
-          bufferedColor: Colors.white30,
-          backgroundColor: Colors.transparent,
-        ),
-      ),
-    );
-  }
-
-  Widget _buildMediaBackground() {
-    final originalImageUrl = widget.postData[DatabaseHelper.colImageUrl] as String?;
-    final imageUrl = _getOptimizedUrl(originalImageUrl, isImage: true);
-
-    if (_controller != null) {
-      if (_controller!.value.isInitialized) {
-        return Center(child: AspectRatio(aspectRatio: _controller!.value.aspectRatio, child: VideoPlayer(_controller!)));
-      } else {
-        if (imageUrl != null && imageUrl.isNotEmpty) {
-          return CachedNetworkImage(imageUrl: imageUrl, fit: BoxFit.contain, placeholder: (context, url) => Container(color: Colors.black), errorWidget: (context, url, error) => _buildErrorWidget());
-        }
-        return const Center(child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white));
-      }
-    } else if (imageUrl != null && imageUrl.isNotEmpty) {
-      return CachedNetworkImage(imageUrl: imageUrl, fit: BoxFit.contain, placeholder: (context, url) => Container(color: Colors.black), errorWidget: (context, url, error) => _buildErrorWidget());
-    }
-    return _buildErrorWidget();
-  }
-  
-  Widget _buildErrorWidget() {
-    return const Center(child: Icon(Icons.image_not_supported_outlined, color: Colors.white24, size: 60));
-  }
-
-  Widget _buildForegroundContent() {
     final lang = Provider.of<LanguageProvider>(context);
-    final userName = widget.postData[DatabaseHelper.colUserName] ?? lang.t('no_author_name');
-    final userImageUrl = widget.postData[DatabaseHelper.colUserImageUrl] ?? '';
-    final postText = widget.postData[DatabaseHelper.colText] as String?;
-    final likes = widget.postData[DatabaseHelper.colLikes] ?? 0;
-    final comments = widget.postData[DatabaseHelper.colCommentsCount] ?? 0;
-    final views = widget.postData[DatabaseHelper.colViews] ?? 0;
-    
-    final displayTime = widget.postData['displayTime'] as String? ?? '';
+    final String langCode = lang.currentLanguage;
+    final feedManager = context.watch<FeedManager>();
+    final String postId = widget.postData[DatabaseHelper.colPostId];
+    final bool isVideo = widget.postData['networkVideoUrl'] != null; 
+    final bool isActiveVideo = (feedManager.activePostId == postId);
+    final controller = feedManager.activeController;
 
-    final TextStyle readableStyle = const TextStyle(
-      color: Colors.white,
-      fontSize: 16, 
-      fontWeight: FontWeight.w600, 
-      height: 1.4,
-      shadows: [
-        Shadow(
-          offset: Offset(1.0, 1.0),
-          blurRadius: 3.0,
-          color: Colors.black, 
-        ),
-      ],
-    );
+    String rawImg = isVideo 
+        ? (widget.postData['thumbnailUrl'] ?? widget.postData[DatabaseHelper.colImageUrl] ?? "") 
+        : (widget.postData[DatabaseHelper.colImageUrl] ?? "");
+    
+    String finalImageUrl = "";
+    if (rawImg.isNotEmpty) {
+      if (rawImg.startsWith('http')) finalImageUrl = rawImg.contains('auth=') ? rawImg : "${R2Service.workerUrl}${Uri.parse(rawImg).path}?auth=${R2Service.workerSecretKey}";
+      else finalImageUrl = rawImg;
+    }
 
     return Container(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [ Colors.black.withAlpha(102), Colors.transparent, Colors.black.withAlpha(153) ],
-          begin: Alignment.topCenter, end: Alignment.bottomCenter, stops: const [0.0, 0.4, 1.0],
-        ),
-      ),
-      padding: const EdgeInsets.all(12.0).copyWith(bottom: 0),
-      child: Stack(
-        children: [
-          Positioned(
-            bottom: 30, left: 0, right: 100,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (postText != null && postText.isNotEmpty)
-                  Builder(
-                    builder: (context) {
-                      const int maxLength = 90;
-                      final bool isLong = postText.length > maxLength;
-                      
-                      if (isLong) {
-                         return Column(
-                           crossAxisAlignment: CrossAxisAlignment.start,
-                           children: [
-                             Text(
-                               '${postText.substring(0, maxLength)}...', 
-                               style: readableStyle, 
-                             ),
-                             const SizedBox(height: 4),
-                             GestureDetector(
-                               onTap: () => _showFullText(postText),
-                               child: Container(
-                                 padding: const EdgeInsets.symmetric(vertical: 4.0),
-                                 child: Text(
-                                   lang.t('read_more_text'), 
-                                   style: const TextStyle(
-                                     color: Colors.lightBlueAccent, 
-                                     fontWeight: FontWeight.w900,
-                                     fontSize: 18, 
-                                     shadows: [Shadow(color: Colors.black, offset: Offset(1,1), blurRadius: 2)]
-                                   )
-                                 ),
-                               ),
-                             ),
-                           ],
-                         );
-                      } else {
-                        return Text(postText, style: readableStyle);
-                      }
-                    }
-                  ),
-                
-                const SizedBox(height: 10),
-
-                GestureDetector(
-                  onTap: () {
-                    final authorId = widget.postData[DatabaseHelper.colUserId];
-                    if (authorId != null) {
-                        Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (context) => UserProfileScreen(userId: authorId)),
-                      );
-                    }
-                  },
-                  child: Row(
-                    children: [
-                      CircleAvatar(
-                        radius: 20, backgroundColor: Colors.grey,
-                        backgroundImage: userImageUrl.isNotEmpty ? CachedNetworkImageProvider(userImageUrl) : null,
-                        child: userImageUrl.isEmpty ? const Icon(Icons.person, color: Colors.white) : null,
-                      ),
-                      const SizedBox(width: 10),
-                      Flexible(
-                        child: Wrap(
-                          crossAxisAlignment: WrapCrossAlignment.center,
-                          children: [
-                            Text(userName, style: const TextStyle(
-                              color: Colors.white, 
-                              fontWeight: FontWeight.bold, 
-                              fontSize: 16,
-                              shadows: [Shadow(offset: Offset(1, 1), blurRadius: 3, color: Colors.black)]
-                            )),
-                            
-                            if (displayTime.isNotEmpty) ...[
-                              const SizedBox(width: 6),
-                              Container(
-                                width: 3, height: 3, 
-                                decoration: const BoxDecoration(color: Colors.white70, shape: BoxShape.circle)
-                              ),
-                              const SizedBox(width: 6),
-                              Text(displayTime, style: const TextStyle(
-                                color: Colors.white70,
-                                fontSize: 13,
-                                fontWeight: FontWeight.w500,
-                                shadows: [Shadow(offset: Offset(1, 1), blurRadius: 3, color: Colors.black)]
-                              )),
-                            ],
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Positioned(
-            bottom: 85, right: 0,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _buildActionButton(icon: Icons.remove_red_eye, text: views.toString(), color: Colors.white),
-                const SizedBox(height: 20),
-                _buildActionButton(icon: widget.isLiked ? Icons.favorite : Icons.favorite_border, text: likes.toString(), color: widget.isLiked ? Colors.red : Colors.white, onTap: widget.onLike),
-                const SizedBox(height: 20),
-                _buildActionButton(icon: Icons.comment_rounded, text: comments.toString(), color: Colors.white, onTap: widget.onComment),
-                const SizedBox(height: 20),
-                PopupMenuButton<String>(
-                  onSelected: (value) {
-                    if (value == 'share') { widget.onShare(); } 
-                    else if (value == 'save') { widget.onDownload(); } 
-                    else if (value == 'report') { widget.onReport(); }
-                  },
-                  icon: const Icon(Icons.more_horiz, color: Colors.white, size: 30),
-                  color: Colors.white,
-                  itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
-                    PopupMenuItem<String>(value: 'share', child: Row(children: [ const Icon(Icons.share, color: Colors.black), const SizedBox(width: 10), Text(lang.t('share_menu_item')) ])),
-                    PopupMenuItem<String>(value: 'save', child: Row(children: [ const Icon(Icons.download, color: Colors.black), const SizedBox(width: 10), Text(lang.t('save_menu_item')) ])),
-                    const PopupMenuDivider(),
-                    PopupMenuItem<String>(value: 'report', child: Row(children: [ const Icon(Icons.flag, color: Colors.black), const SizedBox(width: 10), Text(lang.t('report_menu_item')) ])),
-                  ],
-                ),
-              ],
-            ),
-          )
-        ],
+      color: Colors.black,
+      child: GestureDetector(
+        onTap: () => _handleMainTap(feedManager),
+        onDoubleTap: () {
+          if (!widget.isLiked) widget.onLike();
+          setState(() => _likeAnimationOpacity = 1.0);
+          _likeAnimationController.forward(from: 0.0).then((_) { Future.delayed(const Duration(milliseconds: 500), () { if (mounted) setState(() => _likeAnimationOpacity = 0.0); }); });
+        },
+        child: Stack(fit: StackFit.expand, children: [
+            // IFOTO / THUMBNAIL (No Autoplay makes this stay visible)
+            if (finalImageUrl.isNotEmpty) 
+              CachedNetworkImage(
+                imageUrl: finalImageUrl, 
+                fit: BoxFit.contain, // ✅ NO ZOOM
+                httpHeaders: {'X-Jembe-Auth': R2Service.workerSecretKey}, 
+                width: double.infinity, 
+                height: double.infinity, 
+                placeholder: (c, u) => const Center(child: CupertinoActivityIndicator(color: Colors.white24)), 
+                errorWidget: (c, u, e) => const Center(child: Icon(Icons.broken_image_outlined, color: Colors.white12, size: 50))
+              ),
+            
+            // VIDEO PLAYER (Only shows when clicked/active)
+            if (isVideo && isActiveVideo) 
+              Center(child: (controller != null && controller.value.isInitialized) 
+                ? Stack(alignment: Alignment.center, children: [ 
+                    AspectRatio(aspectRatio: controller.value.aspectRatio, child: CachedVideoPlayerPlus(controller)), 
+                    if (controller.value.isBuffering) const CupertinoActivityIndicator(color: Colors.white, radius: 25) 
+                  ]) 
+                : const CupertinoActivityIndicator(color: Colors.white, radius: 20)),
+            
+            // PLAY BUTTON OVERLAY (Shows when video is not playing)
+            if (isVideo && (!isActiveVideo || (controller != null && !controller.value.isPlaying))) 
+              Center(child: Container(
+                padding: const EdgeInsets.all(15), 
+                decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.4), shape: BoxShape.circle, border: Border.all(color: Colors.white24)), 
+                child: const Icon(Icons.play_arrow_rounded, color: Colors.white, size: 50)
+              )),
+            
+            _buildForeground(langCode, isVideo && isActiveVideo, isVideo ? controller : null),
+            Center(child: AnimatedOpacity(opacity: _likeAnimationOpacity, duration: const Duration(milliseconds: 300), child: ScaleTransition(scale: _likeAnimation, child: const Icon(Icons.favorite, color: Colors.white, size: 110)))),
+            if (_isDownloading) Center(child: Container(width: 100, height: 100, decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(20)), child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [ CircularProgressIndicator(value: _downloadProgress, color: Colors.greenAccent), const SizedBox(height: 10), Text("${(_downloadProgress * 100).toInt()}%", style: const TextStyle(color: Colors.white)) ]))),
+        ]),
       ),
     );
   }
 
-  Widget _buildActionButton({required IconData icon, required String text, required Color color, VoidCallback? onTap}) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Column(children: [
-        Icon(icon, size: 30, color: color, shadows: const [Shadow(offset: Offset(1, 1), blurRadius: 4, color: Colors.black54)]),
-        const SizedBox(height: 4),
-        Text(text, style: const TextStyle(color: Colors.white, fontSize: 12, shadows: [Shadow(offset: Offset(1, 1), blurRadius: 3, color: Colors.black)]))
+  Widget _buildForeground(String langCode, bool isActiveVideo, CachedVideoPlayerPlusController? controller) {
+    final String title = (widget.postData['title'] ?? "").toString().trim();
+    final String content = (widget.postData['content'] ?? widget.postData[DatabaseHelper.colText] ?? "").toString().trim();
+    final String timeStr = _getTimeAgo(widget.postData['timestamp']); // ✅ 2h format
+    String line1 = title; String line2 = "";
+    bool showReadMore = content.isNotEmpty || title.length > 25;
+    if (title.length > 20) {
+      int splitTarget = (title.length * 0.6).toInt();
+      int splitIndex = title.indexOf(' ', splitTarget);
+      if (splitIndex == -1 || splitIndex > title.length - 5) splitIndex = splitTarget;
+      line1 = title.substring(0, splitIndex).trim();
+      line2 = title.substring(splitIndex).trim();
+    }
+    final TextStyle customTitleStyle = TextStyle(color: Colors.white, fontSize: 12.5, fontWeight: FontWeight.w800, letterSpacing: -0.6, height: 1.0, shadows: const [Shadow(blurRadius: 10, color: Colors.black, offset: Offset(1, 1))]);
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 35), 
+      child: Stack(children: [
+          Positioned(bottom: 10, left: 0, right: 85, child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+                if (title.isNotEmpty) Container(
+                  padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.3), borderRadius: BorderRadius.circular(15)),
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text(line1, style: customTitleStyle), const SizedBox(height: 5),
+                      Text.rich(TextSpan(children: [
+                          TextSpan(text: line2.isEmpty ? "" : "$line2  ", style: customTitleStyle),
+                          if (showReadMore) WidgetSpan(alignment: PlaceholderAlignment.middle, child: GestureDetector(onTap: () => _showFullNewsModal(context, title, content, langCode), child: Container(padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8), decoration: BoxDecoration(color: Colors.greenAccent.withValues(alpha: 0.9), borderRadius: BorderRadius.circular(10), boxShadow: const [BoxShadow(color: Colors.black45, blurRadius: 6, offset: Offset(0, 3))]), child: Text(PostTranslations.t('read_more', langCode), style: const TextStyle(color: Colors.black, fontSize: 13, fontWeight: FontWeight.w900, letterSpacing: 0.5))))),
+                      ])),
+                  ]),
+                ),
+                const SizedBox(height: 10),
+                _buildUserTag(timeStr),
+                if (isActiveVideo && controller != null && controller.value.isInitialized)
+                  Padding(padding: const EdgeInsets.only(top: 12, left: 5, right: 10), child: SizedBox(height: 15, child: VideoProgressIndicator(controller, allowScrubbing: true, padding: const EdgeInsets.symmetric(vertical: 6), colors: const VideoProgressColors(playedColor: Colors.greenAccent, bufferedColor: Colors.white24, backgroundColor: Colors.white10)))),
+          ])),
+          Positioned(bottom: 45, right: 0, child: _buildSideActions(langCode)),
       ]),
     );
+  }
+
+  Widget _buildUserTag(String timeStr) {
+    String? rawPhoto = widget.postData[DatabaseHelper.colUserImageUrl];
+    String livePhoto = (rawPhoto != null && rawPhoto.isNotEmpty) ? (rawPhoto.contains('auth=') ? rawPhoto : "${R2Service.workerUrl}${Uri.parse(rawPhoto).path}?auth=${R2Service.workerSecretKey}") : "";
+    final String liveName = widget.postData[DatabaseHelper.colUserName] ?? "Star";
+    return GestureDetector(
+      onTap: () { context.read<FeedManager>().pauseAll(); Navigator.push(context, MaterialPageRoute(builder: (c) => UserProfileScreen(userId: widget.postData[DatabaseHelper.colUserId]))); },
+      child: Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6), decoration: BoxDecoration(color: Colors.greenAccent.withValues(alpha: 0.3), borderRadius: BorderRadius.circular(20), border: Border.all(color: Colors.greenAccent.withValues(alpha: 0.5), width: 1.2)),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [ 
+              ClipOval(child: SizedBox(width: 24, height: 24, child: (livePhoto.isNotEmpty) ? CachedNetworkImage(imageUrl: livePhoto, httpHeaders: {'X-Jembe-Auth': R2Service.workerSecretKey}, fit: BoxFit.cover, errorWidget: (c,u,e) => const Icon(Icons.person, size: 14, color: Colors.white)) : const Icon(Icons.person, size: 14, color: Colors.white))), 
+              const SizedBox(width: 8), Text("@$liveName", style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12, shadows: [Shadow(blurRadius: 5, color: Colors.black)])),
+              const SizedBox(width: 6), Text("• $timeStr", style: const TextStyle(color: Colors.white, fontSize: 11, shadows: [Shadow(blurRadius: 5, color: Colors.black)])),
+        ]),
+      ),
+    );
+  }
+
+  Widget _buildSideActions(String langCode) {
+    return Column(children: [
+      _actionIcon(Icons.remove_red_eye_outlined, widget.postData[DatabaseHelper.colViews].toString()), const SizedBox(height: 18),
+      _actionIcon(widget.isLiked ? Icons.favorite : Icons.favorite_border_rounded, widget.postData[DatabaseHelper.colLikes].toString(), color: widget.isLiked ? Colors.red : Colors.white), const SizedBox(height: 18),
+      _actionIcon(Icons.chat_bubble_outline_rounded, widget.postData[DatabaseHelper.colCommentsCount].toString(), onTap: widget.onComment), const SizedBox(height: 18),
+      _actionIcon(Icons.share_outlined, PostTranslations.t('forward_button', langCode), onTap: widget.onShare), const SizedBox(height: 18),
+      GestureDetector(onTap: () => _showMoreOptions(context, langCode), child: Container(padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: Colors.greenAccent.withValues(alpha: 0.3), shape: BoxShape.circle, border: Border.all(color: Colors.greenAccent.withValues(alpha: 0.6), width: 1.5), boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 8)]), child: const Icon(Icons.grid_view_rounded, color: Colors.white, size: 22))),
+    ]);
+  }
+
+  Widget _actionIcon(IconData icon, String label, {Color color = Colors.white, VoidCallback? onTap}) {
+    return GestureDetector(onTap: onTap ?? widget.onLike, child: Column(children: [ 
+          Container(padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: Colors.greenAccent.withValues(alpha: 0.35), shape: BoxShape.circle, border: Border.all(color: Colors.greenAccent.withValues(alpha: 0.6), width: 1.2), boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 5, offset: Offset(0, 2))]), child: Icon(icon, size: 26, color: color, shadows: const [Shadow(blurRadius: 10, color: Colors.black54)])),
+          const SizedBox(height: 4), Text(label, style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold, shadows: [Shadow(blurRadius: 10, color: Colors.black54)])),
+    ]));
+  }
+
+  void _showMoreOptions(BuildContext context, String langCode) {
+    String reportBtnLabel = "Report";
+    if (langCode == 'ki') reportBtnLabel = "Rega"; else if (langCode == 'sw') reportBtnLabel = "Ripoti"; else if (langCode == 'fr') reportBtnLabel = "Signaler";
+    showModalBottomSheet(context: context, backgroundColor: Colors.transparent, builder: (context) => Container(
+        margin: const EdgeInsets.all(20), decoration: BoxDecoration(color: const Color(0xFF1E293B).withValues(alpha: 0.98), borderRadius: BorderRadius.circular(25), border: Border.all(color: Colors.white10)),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+            const SizedBox(height: 15),
+            ListTile(leading: const Icon(Icons.file_download_outlined, color: Colors.white), title: Text(PostTranslations.t('save_button', langCode), style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)), onTap: () { Navigator.pop(context); _handleDownload(langCode); }),
+            const Padding(padding: EdgeInsets.symmetric(horizontal: 20), child: Divider(color: Colors.white10)),
+            ListTile(leading: const CircleAvatar(backgroundColor: Colors.redAccent, radius: 15, child: Icon(Icons.report, color: Colors.white, size: 18)), title: Text(reportBtnLabel, style: const TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold)), onTap: () { Navigator.pop(context); widget.onReport(); }),
+            const SizedBox(height: 15),
+        ])));
+  }
+
+  Future<void> _handleDownload(String langCode) async {
+    final String? videoUrl = widget.postData['networkVideoUrl'];
+    final String? imageUrl = widget.postData[DatabaseHelper.colImageUrl];
+    final String? fileUrl = (videoUrl != null && videoUrl.isNotEmpty) ? videoUrl : imageUrl;
+    if (fileUrl == null || fileUrl.isEmpty || _isDownloading) return;
+    try {
+      setState(() { _isDownloading = true; _downloadProgress = 0.0; });
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(PostTranslations.t('download_started', langCode))));
+      final tempDir = await getTemporaryDirectory();
+      final bool isVideoFile = (videoUrl != null && videoUrl.isNotEmpty);
+      final String fileName = "JembeTalk_${DateTime.now().millisecondsSinceEpoch}${isVideoFile ? '.mp4' : '.jpg'}";
+      final String tempPath = "${tempDir.path}/$fileName";
+      String finalUrl = fileUrl.contains('auth=') ? fileUrl : "${R2Service.workerUrl}${Uri.parse(fileUrl).path}?auth=${R2Service.workerSecretKey}";
+      await Dio().download(finalUrl, tempPath, onReceiveProgress: (received, total) { if (total != -1) { setState(() { _downloadProgress = (received / total); }); } });
+      await FileStorageService.instance.saveFileToPublicDirectory(tempFilePath: tempPath, dirType: isVideoFile ? StorageDirectoryType.video : StorageDirectoryType.images, fileName: fileName);
+      setState(() { _isDownloading = false; });
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(PostTranslations.t('download_finished', langCode)), backgroundColor: Colors.green));
+    } catch (_) { setState(() { _isDownloading = false; }); }
   }
 }
