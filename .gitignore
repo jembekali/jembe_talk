@@ -44,3 +44,15 @@ app.*.map.json
 /android/app/profile
 /android/app/release
 lib/services/r2_service.dart
+r2_service.dart
+# Firebase cache (ntibigomba kujya kuri git)
+.firebase/
+
+# Amabanga yo gusinya App (Android)
+android/key.properties
+android/app/*.jks
+android/app/*.keystore
+
+# Google Services (niba ushaka ko umushinga uba private cyane)
+android/app/google-services.json
+ios/Runner/GoogleService-Info.plist
