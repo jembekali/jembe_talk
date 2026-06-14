@@ -56,6 +56,11 @@ class LanguageProvider with ChangeNotifier {
       'wallpaper_change': 'Hindura',
 'wallpaper_delete': 'Futa',
 
+'blocked_title': 'Konte yanyu yarahagaritswe!',
+'blocked_desc': "Konte yanyu yahagaritswe vy'imfata kibanza kubera kutubahiriza amategeko ya Jembe Talk. fyonda akabuto kari musi utwandikire tugufashe.",
+'blocked_btn_contact': 'TWANDIKIRE (UBUFASHA)',
+'blocked_logout': 'Sohoka muri Konte (Logout)',
+
       // --- Welcome & Auth ---
       'welcome_terms': "Imbere yuko winjira, banza wemere ko utazokoresha uru rubuga mubintu vyose vyigisha irwanko canke ibintu vyose bitandukanye n'umuco w'akarere k'ibiyaga binini. Utegerezwa kandi kuba wemeye ko utazokoresha uru rubuga mu bintu birenga ku mategeko y'Igihugu cawe.",
       'login_phone_btn': 'Injira Ukoresheje Telefone',
@@ -119,6 +124,7 @@ class LanguageProvider with ChangeNotifier {
       'acc_req_info_sub': 'Saba raporo y\'amakuru ya konte yawe',
       'acc_delete': 'Gufuta konte yanje',
       'acc_delete_sub': 'Futa konte yawe burundu, ntisubirako',
+      'security_force_logout': "Wasohowe muri iyi konte kuko yashizwe muyindi telefone. Ibi bikozwe ku mvo z'umutekano.",
 
       // --- Change Number ---
       'chg_num_title': 'Guhindura Nimero',
@@ -134,6 +140,17 @@ class LanguageProvider with ChangeNotifier {
       'chg_num_error_length': 'Nimero umengo ntiyuzuye.',
       'chg_num_verify_title': 'Emeza Nimero Nshasha',
       'chg_num_verify_subtitle': 'Andika code twarungitse kuri',
+
+      
+'update_required_title': 'Igihe carangiye!',
+'update_available_title': 'Version nshasha yabonetse',
+'update_msg_force': 'Version ukoresha yashaje cane. Ntushobora kubandanya utarayivugurura.',
+'update_msg_warn_prefix': 'Ufise iminsi',
+'update_msg_warn_suffix': 'yo gushira kugihe iyi App kugira ibandanye gukora neza.',
+'update_btn_now': 'VOMA VERSION NSHASHA',
+'btn_close_app': 'UGARA POROGARAME',
+'btn_remind_me': 'BANDANYA (HANYUMA)',
+
 
       // --- Delete Account ---
       'delete_acc_title': 'Gufuta Konte Yanje',
@@ -248,6 +265,17 @@ class LanguageProvider with ChangeNotifier {
       'security_intro': 'Jembe Talk iritwararika umutekano w\'amakuru yawe. Ibiganiro vyose birakingiwe kuva ku warungitse gushika ku wakiriye (end-to-end encrypted).',
       'security_switch_title': 'Erekana notification z\'umutekano',
       'security_switch_sub': 'Rungika ubutumwa iyo code y\'umutekano y\'umuntu mwandikirana ihindutse.',
+'contact_admin_title': 'Twandikire Admin',
+'contact_info_text': 'Sigura neza ikibazo ufise canke igituma konte yawe ikwiye gufungugwa.',
+'contact_your_msg_label': 'Ubutumwa bwawe',
+'contact_hint': 'Andika hano...',
+'contact_btn_send': 'Rungika Ubutumwa',
+'contact_success_title': 'Ubutumwa Bwarungitswe!',
+'contact_success_body': 'Ubutumwa bwawe bwashitse muri Jembe Talk. Turaguha inyishu vuba bishoboka.',
+'contact_success_btn': 'Sawa, Ndategereje',
+'contact_footer_text': 'Turaguha inyishu mu masaha 24.',
+'contact_empty_error': 'Andika ubutumwa mbere yo kurungika.',
+'help_cat_ban_appeal': 'Gusaba gufungurwa konte',
 
       // --- Help & Support ---
       'help_title': 'Ubufasha',
@@ -626,6 +654,20 @@ class LanguageProvider with ChangeNotifier {
       'time_ago_days_suffix': 'd',
       'unknown_time': 'Unknown time',
       'loading_tv_prompt': 'You will soon be watching:',
+      'help_cat_ban_appeal': 'Ban Appeal / Account Issues',
+      'notif_new_message': 'New message',
+'notif_sent_photo': 'Sent a photo',
+'notif_sent_video': 'Sent a video',
+'notif_sent_audio': 'Sent a voice message',
+'notif_sent_file': 'Sent a file',
+'notif_sent_contact': 'Sent a contact',
+'notif_sent_game': 'Invited you to a game',
+
+      'blocked_title': 'Your Account is Blocked!',
+'blocked_desc': "Your account has been temporarily blocked for violating Jembe Talk's terms and conditions. If you want to appeal, tap the button below to contact us.",
+'blocked_btn_contact': 'CONTACT US (ADMIN HELP)',
+'blocked_logout': 'Logout from Account',
+'security_force_logout': "You have been logged out because this account was signed in on another device. This is done for security reasons.",
 
       // --- Welcome & Auth ---
       'welcome_terms': "Before entering, you must agree not to use this platform for anything that promotes hate or contradicts the culture of the Great Lakes region. You must also agree not to use this platform for anything that violates the laws of your country.",
@@ -695,6 +737,16 @@ class LanguageProvider with ChangeNotifier {
       'chg_num_error_length': 'Number seems incomplete.',
       'chg_num_verify_title': 'Verify New Number',
       'chg_num_verify_subtitle': 'Enter the code we sent to',
+      
+'update_required_title': 'Update Required!',
+'update_available_title': 'New Version Available',
+'update_msg_force': 'Your current version is too old. You must update to continue using the app.',
+'update_msg_warn_prefix': 'You have',
+'update_msg_warn_suffix': 'days remaining to update this app before it expires.',
+'update_btn_now': 'UPDATE NOW',
+'btn_close_app': 'EXIT APP',
+'btn_remind_me': 'CONTINUE (LATER)',
+
 
       // --- Delete Account ---
       'delete_acc_title': 'Delete My Account',
@@ -1125,6 +1177,7 @@ class LanguageProvider with ChangeNotifier {
       'dame_cancel_invitation_button': 'Cancel Invitation',
       'dame_cancel_button': 'Cancel',
       'dame_send_invitation_button': 'Invite to Play',
+      'help_cat_ban_appeal': 'Recours contre le blocage',
 
       // --- Sync, Firebase, Logs ---
       'firebase_error_saving_token': 'Error saving app data.',
@@ -1216,6 +1269,12 @@ class LanguageProvider with ChangeNotifier {
       'change_phone_btn': 'Changer de numéro',
       'error_invalid_code': 'Code invalide.',
       'error_signin': 'Erreur de connexion :',
+      'help_cat_ban_appeal': 'Recours contre le blocage',
+
+'blocked_title': 'Votre compte est bloqué !',
+'blocked_desc': "Votre compte a été temporairement bloqué pour violation des conditions d'utilisation de Jembe Talk. Si vous souhaitez vous expliquer, appuyez sur le bouton ci-dessous pour contacter l'Admin.",
+'blocked_btn_contact': 'CONTACTEZ-NOUS (AIDE ADMIN)',
+'blocked_logout': 'Se déconnecter du compte',
 
       // --- Profile Setup & Edit ---
       'profile_setup_title': 'Configurez votre profil',
@@ -1268,6 +1327,15 @@ class LanguageProvider with ChangeNotifier {
       'chg_num_error_length': 'Le numéro semble incomplet.',
       'chg_num_verify_title': 'Vérifier le Nouveau Numéro',
       'chg_num_verify_subtitle': 'Entrez le code que nous avons envoyé à',
+
+      'update_required_title': 'Mise à jour requise !',
+'update_available_title': 'Nouvelle version disponible',
+'update_msg_force': 'Votre version est trop ancienne. Vous devez la mettre à jour pour continuer.',
+'update_msg_warn_prefix': 'Il vous reste',
+'update_msg_warn_suffix': 'jours pour mettre à jour l\'application avant qu\'elle n\'expire.',
+'update_btn_now': 'METTRE À JOUR',
+'btn_close_app': 'QUITTER',
+'btn_remind_me': 'PLUS TARD',
 
       // --- Delete Account ---
       'delete_acc_title': 'Supprimer mon compte',
@@ -1409,6 +1477,17 @@ class LanguageProvider with ChangeNotifier {
       'chat_security_notice': 'Les messages sont chiffrés de bout en bout. Personne en dehors de cette discussion ne peut les lire.',
 'ludo_coming_soon': 'Ludo : ce jeu sera bientôt disponible.',
 
+'contact_admin_title': 'Contact Admin',
+'contact_info_text': 'Clearly explain the issue you have or why your account should be unblocked.',
+'contact_your_msg_label': 'Your message',
+'contact_hint': 'Type here...',
+'contact_btn_send': 'Send Message',
+'contact_success_title': 'Message Sent!',
+'contact_success_body': 'Your message has reached Jembe Talk Admin. We will reply as soon as possible through your account.',
+'contact_success_btn': 'OK, I will wait',
+'contact_footer_text': 'We will reply within 24 hours.',
+'contact_empty_error': 'Write a message before sending.',
+
       // --- Request Info & Report ---
       'req_info_title': 'Demander infos du compte',
       'req_info_subtitle': 'Demandez un rapport sur les informations de votre compte.',
@@ -1548,6 +1627,13 @@ class LanguageProvider with ChangeNotifier {
       'photo_not_found_error': 'Photo introuvable sur l\'appareil.',
       'photo_display_error': 'Impossible d\'afficher la photo.',
       'photo_tooltip_save': 'Enregistrer la photo',
+      'notif_new_message': 'Nouveau message',
+'notif_sent_photo': 'A envoyé une photo',
+'notif_sent_video': 'A envoyé une vidéo',
+'notif_sent_audio': 'A envoyé un message vocal',
+'notif_sent_file': 'A envoyé un fichier',
+'notif_sent_contact': 'A envoyé un contact',
+'notif_sent_game': 'Vous a invité à un jeu',
 
       // --- Search Users ---
       'search_users_title': 'Rechercher des personnes',
@@ -1661,6 +1747,17 @@ class LanguageProvider with ChangeNotifier {
 "chat_you": "Vous",
 "chat_delete_confirm_dialog_title": "Supprimer ce message ?",
 
+'contact_admin_title': 'Contacter l\'Admin',
+'contact_info_text': 'Expliquez clairement le problème ou pourquoi votre compte devrait être débloqué.',
+'contact_your_msg_label': 'Votre message',
+'contact_hint': 'Écrivez ici...',
+'contact_btn_send': 'Envoyer le Message',
+'contact_success_title': 'Message Envoyé !',
+'contact_success_body': 'Votre message a bien été reçu par l\'Admin de Jembe Talk. Nous vous répondrons dès que possible.',
+'contact_success_btn': 'D\'accord, j\'attends',
+'contact_footer_text': 'Nous vous répondrons sous 24 heures.',
+'contact_empty_error': 'Écrivez un message avant d\'envoyer.',
+
       // --- Video Editor & Post Creation ---
       'video_editor_title': 'Modifier la Vidéo',
       'text_editor_hint': 'Écrivez ici...',
@@ -1699,6 +1796,7 @@ class LanguageProvider with ChangeNotifier {
       'dame_cancel_invitation_button': 'Annuler l\'invitation',
       'dame_cancel_button': 'Annuler',
       'dame_send_invitation_button': 'Inviter à jouer',
+      'security_force_logout': "Vous avez été déconnecté car ce compte a été ouvert sur un autre appareil. Ceci est fait pour des raisons de sécurité.",
 
       // --- Sync, Firebase, Logs ---
       'firebase_error_saving_token': 'Erreur lors de l\'enregistrement des données de l\'application.',
@@ -2127,7 +2225,15 @@ class LanguageProvider with ChangeNotifier {
       'search_users_prompt': 'Anza kuandika ili kutafuta.',
       'search_users_no_results': 'Hakuna mtu anayeitwa',
       'search_users_unknown_name': 'Jina lisilojulikana',
+'security_force_logout': "Umetolewa kwenye akaunti hii kwa sababu imefunguliwa kwenye simu nyingine. Hii imefanywa kwa sababu za kiusalama.",
 
+'notif_new_message': 'Ubutumwa bushasha',
+'notif_sent_photo': 'Yarungitse ifoto',
+'notif_sent_video': 'Yarungitse video',
+'notif_sent_audio': 'Yarungitse ijwi',
+'notif_sent_file': 'Yarungitse dosiye',
+'notif_sent_contact': 'Yarungitse contact',
+'notif_sent_game': 'Yagutumiye mu mukino',
       // --- Tangaza Star ---
       'screen_title': 'Tangaza Star',
       'star_post_title': 'Chapisho la Nyota ⭐',
@@ -2304,6 +2410,28 @@ class LanguageProvider with ChangeNotifier {
 "chat_delete_confirm_dialog_title": "Futa ujumbe huu?",
 'chat_security_notice': 'Ujumbe umefumbwa kutoka mwanzo hadi mwisho. Hakuna mtu yeyote nje ya mazungumzo haya anayeweza kuusoma.',
 'ludo_coming_soon': 'Ludo: mchezo huu utapatikana hivi karibuni.',
+'blocked_title': 'Akaunti Yako Imezuiliwa!',
+'blocked_desc': 'Akaunti yako imezuiliwa kwa muda kwa sababu ya kukiuka vigezo na masharti ya Jembe Talk. Ikiwa unataka kutoa maelezo, bonyeza kitufe kilicho hapa chini ili kuwasiliana na si.',
+'blocked_btn_contact': 'WASILIANA NASI (MSAADA)',
+'blocked_logout': 'Toka kwenye Akaunti',
+'help_cat_ban_appeal': 'Rufaa ya kufungiwa akaunti',
+
+
+'update_required_title': 'Sasisho Linahitajika!',
+'update_available_title': 'Toleo Jipya Linapatikana',
+'update_msg_force': 'Toleo unalotumia ni la zamani sana. Lazima usasishe ili kuendelea.',
+'update_msg_warn_prefix': 'Una siku',
+'update_msg_warn_suffix': 'zilizobaki kusasisha programu hii kabla haijaisha muda wake.',
+'update_btn_now': 'SASISHA SASA',
+'btn_close_app': 'FUNGA PROGRAMU',
+'btn_remind_me': 'ENDELEA (BAADAYE)',
+'notif_new_message': 'Ujumbe mpya',
+'notif_sent_photo': 'Alituma picha',
+'notif_sent_video': 'Alituma video',
+'notif_sent_audio': 'Alituma ujumbe wa sauti',
+'notif_sent_file': 'Alituma faili',
+'notif_sent_contact': 'Alituma mwasiliani',
+'notif_sent_game': 'Alikualika kwenye mchezo',
 
 
       'feedback_details_title': 'Maelezo ya Maoni',
@@ -2315,6 +2443,16 @@ class LanguageProvider with ChangeNotifier {
       'feedback_no_details': 'Maelezo ya maoni hayakupatikana.',
       'chg_num_verify_title': 'Thibitisha Nambari Mpya',
       'chg_num_verify_subtitle': 'Weka nambari tuliyotuma kwa',
+      'contact_admin_title': 'Wasiliana na Admin',
+'contact_info_text': 'Eleza kwa kina tatizo lako au sababu kwa nini akaunti yako inapaswa kufunguliwa.',
+'contact_your_msg_label': 'Ujumbe wako',
+'contact_hint': 'Andika hapa...',
+'contact_btn_send': 'Tuma Ujumbe',
+'contact_success_title': 'Ujumbe Umetumwa!',
+'contact_success_body': 'Ujumbe wako umemfikia Admin wa Jembe Talk. Tutakujibu haraka iwezekanavyo kupitia akaunti yako.',
+'contact_success_btn': 'Sawa, Nasubiri',
+'contact_footer_text': 'Tutakujibu ndani ya saa 24.',
+'contact_empty_error': 'Andika ujumbe kabla ya kutuma.',
       // ...
   'mon': 'Jumatatu',
   'tue': 'Jumanne',

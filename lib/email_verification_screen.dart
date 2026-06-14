@@ -1,3 +1,5 @@
+// lib/email_verification_screen.dart (VERSION 54.0 - WITH PHONE VERIFICATION DISPLAY)
+
 import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -6,42 +8,71 @@ import 'package:provider/provider.dart';
 import 'package:jembe_talk/language_provider.dart';
 import 'package:jembe_talk/app_translations.dart';
 import 'package:jembe_talk/profile_setup_screen.dart';
-import 'package:jembe_talk/home_screen.dart'; // <<< Import HomeScreen
+import 'package:jembe_talk/registration_screen.dart';
+import 'package:jembe_talk/home_screen.dart';
 
 class EmailVerificationScreen extends StatefulWidget {
   final String email;
-  final String? newPhoneNumber; // Numero nshasha (niba ihari)
-  final bool isChangingNumber; // Twereka niba ari uguhindura numero canke kwiyandikisha
-  
-  const EmailVerificationScreen({
-    super.key, 
-    required this.email, 
-    this.newPhoneNumber, 
-    this.isChangingNumber = false
-  });
+  final String? newPhoneNumber;
+  final bool isChangingNumber;
+
+  const EmailVerificationScreen(
+      {super.key,
+      required this.email,
+      this.newPhoneNumber,
+      this.isChangingNumber = false});
 
   @override
-  State<EmailVerificationScreen> createState() => _EmailVerificationScreenState();
+  State<EmailVerificationScreen> createState() =>
+      _EmailVerificationScreenState();
 }
 
 class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
   bool _isEmailVerified = false;
   bool _canResendEmail = false;
-  Timer? _checkTimer;   
-  Timer? _countdownTimer; 
-  int _secondsRemaining = 120; 
+  bool _isCleaningUp = false;
+  Timer? _checkTimer;
+  Timer? _countdownTimer;
+  int _secondsRemaining = 120;
 
   @override
   void initState() {
     super.initState();
-    _checkTimer = Timer.periodic(const Duration(seconds: 3), (_) => _checkEmailVerified());
+    _checkTimer = Timer.periodic(
+        const Duration(seconds: 3), (_) => _checkEmailVerified());
     _startCountdown();
   }
 
+  Widget _buildAppLogo() {
+    return Container(
+      width: 85,
+      height: 85,
+      decoration: const BoxDecoration(
+        color: Color(0xFF005A5A),
+        borderRadius: BorderRadius.only(
+          topLeft: Radius.circular(20),
+          topRight: Radius.circular(20),
+          bottomRight: Radius.circular(20),
+          bottomLeft: Radius.circular(6),
+        ),
+      ),
+      child: const Center(
+          child: Icon(Icons.star_rounded, color: Colors.amber, size: 65)),
+    );
+  }
+
   void _startCountdown() {
-    setState(() { _canResendEmail = false; _secondsRemaining = 120; });
+    if (!mounted) return;
+    setState(() {
+      _canResendEmail = false;
+      _secondsRemaining = 120;
+    });
     _countdownTimer?.cancel();
     _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
       if (_secondsRemaining > 0) {
         setState(() => _secondsRemaining--);
       } else {
@@ -53,35 +84,67 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
 
   Future<void> _checkEmailVerified() async {
     final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
-    
-    await user.reload();
-    if (user.emailVerified) {
-      setState(() => _isEmailVerified = true);
-      _checkTimer?.cancel();
-      _countdownTimer?.cancel();
-      
-      // --- LOGIC YA CHANGE NUMBER ---
-      if (widget.isChangingNumber && widget.newPhoneNumber != null) {
-        try {
-          // 1. Vugurura Firestore
-          await FirebaseFirestore.instance.collection('users').doc(user.uid).update({
-            'phoneNumber': widget.newPhoneNumber
-          });
-          
+    if (user == null || _isCleaningUp) return;
+
+    try {
+      await user.reload();
+      if (!mounted) return;
+
+      if (user.emailVerified) {
+        _isEmailVerified = true;
+        _checkTimer?.cancel();
+        _countdownTimer?.cancel();
+
+        if (widget.isChangingNumber && widget.newPhoneNumber != null) {
+          await FirebaseFirestore.instance
+              .collection('users')
+              .doc(user.uid)
+              .update({'phoneNumber': widget.newPhoneNumber});
+          if (mounted) _showSuccessDialog();
+        } else {
           if (mounted) {
-            _showSuccessDialog();
+            Future.delayed(const Duration(seconds: 1), () {
+              if (mounted) {
+                Navigator.pushAndRemoveUntil(
+                    context,
+                    MaterialPageRoute(
+                        builder: (c) => const ProfileSetupScreen()),
+                    (r) => false);
+              }
+            });
           }
-        } catch (e) {
-          debugPrint("Firestore Update Error: $e");
         }
-      } else {
-        // --- LOGIC YA REGISTRATION ---
-        if (mounted) {
-          Future.delayed(const Duration(seconds: 1), () {
-            Navigator.pushAndRemoveUntil(context, MaterialPageRoute(builder: (c) => const ProfileSetupScreen()), (r) => false);
-          });
-        }
+      }
+    } catch (e) {
+      debugPrint("Verification Check Error: $e");
+    }
+  }
+
+  Future<void> _abortAndGoBack(String c) async {
+    if (_isCleaningUp) return;
+
+    setState(() => _isCleaningUp = true);
+    _checkTimer?.cancel();
+    _countdownTimer?.cancel();
+
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user != null) {
+        String uid = user.uid;
+        await FirebaseFirestore.instance.collection('users').doc(uid).delete();
+        await user.delete();
+      }
+    } catch (e) {
+      debugPrint("Cleanup Error: $e");
+      await FirebaseAuth.instance.signOut();
+    } finally {
+      if (mounted) {
+        Navigator.pushAndRemoveUntil(
+            context,
+            MaterialPageRoute(
+                builder: (ctx) =>
+                    RegistrationScreen(initialPhone: widget.newPhoneNumber)),
+            (r) => false);
       }
     }
   }
@@ -93,16 +156,24 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
       barrierDismissible: false,
       builder: (ctx) => AlertDialog(
         backgroundColor: const Color(0xFF1C2935),
-        title: const Icon(Icons.check_circle, color: Colors.tealAccent, size: 50),
+        title:
+            const Icon(Icons.check_circle, color: Colors.tealAccent, size: 50),
         content: Text(
-          AppTranslations.translate(lang.currentLanguage, 'privacy_saved'), // "Amakuru yabitswe neza"
-          textAlign: TextAlign.center,
-          style: const TextStyle(color: Colors.white),
-        ),
+            AppTranslations.translate(lang.currentLanguage, 'privacy_saved'),
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: Colors.white)),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pushAndRemoveUntil(context, MaterialPageRoute(builder: (c) => const HomeScreen()), (r) => false),
-            child: Text(AppTranslations.translate(lang.currentLanguage, 'success_btn'), style: const TextStyle(color: Colors.tealAccent)),
+            onPressed: () {
+              Navigator.pop(ctx);
+              Navigator.pushAndRemoveUntil(
+                  context,
+                  MaterialPageRoute(builder: (c) => const HomeScreen()),
+                  (r) => false);
+            },
+            child: Text(
+                AppTranslations.translate(lang.currentLanguage, 'success_btn'),
+                style: const TextStyle(color: Colors.tealAccent)),
           )
         ],
       ),
@@ -110,17 +181,33 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
   }
 
   Future<void> _resendEmail(String c) async {
+    if (_isCleaningUp) return;
     try {
       await FirebaseAuth.instance.currentUser?.sendEmailVerification();
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(AppTranslations.translate(c, 'link_sent_title'))));
-      _startCountdown();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(AppTranslations.translate(c, 'link_sent_title')),
+            backgroundColor: Colors.teal));
+        _startCountdown();
+      }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Try again later.")));
+      if (mounted)
+        _showSnackBar(
+            AppTranslations.translate(c, 'error_generic'), Colors.orange);
     }
   }
 
+  void _showSnackBar(String m, Color col) =>
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(m, style: const TextStyle(fontWeight: FontWeight.bold)),
+          backgroundColor: col));
+
   @override
-  void dispose() { _checkTimer?.cancel(); _countdownTimer?.cancel(); super.dispose(); }
+  void dispose() {
+    _checkTimer?.cancel();
+    _countdownTimer?.cancel();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -129,23 +216,119 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
 
     return Scaffold(
       backgroundColor: const Color(0xFF1C2935),
-      appBar: AppBar(backgroundColor: Colors.transparent, elevation: 0, leading: IconButton(icon: const Icon(Icons.arrow_back_ios_new, color: Colors.white, size: 20), onPressed: () => Navigator.pop(context))),
-      body: Container(width: double.infinity, padding: const EdgeInsets.all(30), child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-        Icon(_isEmailVerified ? Icons.check_circle : Icons.mark_email_unread_rounded, size: 100, color: _isEmailVerified ? Colors.tealAccent : Colors.amber),
-        const SizedBox(height: 30),
-        Text(AppTranslations.translate(c, _isEmailVerified ? 'verify_success' : 'verify_title'), style: const TextStyle(color: Colors.white, fontSize: 26, fontWeight: FontWeight.bold)),
-        const SizedBox(height: 15),
-        Text("${AppTranslations.translate(c, 'verify_msg')}\n${widget.email}", textAlign: TextAlign.center, style: const TextStyle(color: Colors.white70, fontSize: 16)),
-        const SizedBox(height: 40),
-        if (!_isEmailVerified) ...[
-          const CircularProgressIndicator(color: Colors.teal),
-          const SizedBox(height: 40),
-          TextButton(
-            onPressed: _canResendEmail ? () => _resendEmail(c) : null, 
-            child: Text(_canResendEmail ? AppTranslations.translate(c, 'resend_link') : "${AppTranslations.translate(c, 'resend_wait')} ($_secondsRemaining)", style: TextStyle(color: _canResendEmail ? Colors.tealAccent : Colors.white38, fontWeight: FontWeight.bold)),
-          ),
-        ] else Text(AppTranslations.translate(c, 'verifying_msg'), style: const TextStyle(color: Colors.tealAccent)),
-      ])),
+      body: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(30),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            if (_isCleaningUp) ...[
+              const CircularProgressIndicator(color: Colors.amber),
+              const SizedBox(height: 20),
+              Text(AppTranslations.translate(c, 'cleaning_data'),
+                  style: const TextStyle(color: Colors.white70)),
+            ] else ...[
+              _buildAppLogo(),
+              const SizedBox(height: 30),
+              Text(
+                  AppTranslations.translate(
+                      c, _isEmailVerified ? 'verify_success' : 'verify_title'),
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 26,
+                      fontWeight: FontWeight.bold)),
+              const SizedBox(height: 20),
+
+              // --- 🔥 🔥 🔥 INFO CONTAINER (EMAIL & PHONE) 🔥 🔥 🔥 ---
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.05),
+                    borderRadius: BorderRadius.circular(15),
+                    border: Border.all(color: Colors.white10)),
+                child: Column(
+                  children: [
+                    // Email Display
+                    Text(widget.email,
+                        style: const TextStyle(
+                            color: Colors.amber,
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 5),
+                    Text(AppTranslations.translate(c, 'email_label') ?? "Email",
+                        style: const TextStyle(
+                            color: Colors.white38, fontSize: 12)),
+
+                    // --- 🔥 🔥 DISPLAY PHONE NUMBER 🔥 🔥 ---
+                    if (widget.newPhoneNumber != null) ...[
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 10),
+                        child: Divider(color: Colors.white10, thickness: 1),
+                      ),
+                      Text(widget.newPhoneNumber!,
+                          style: const TextStyle(
+                              color: Colors.amber,
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 5),
+                      Text(
+                          AppTranslations.translate(c, 'login_phone_hint') ??
+                              "Phone Number",
+                          style: const TextStyle(
+                              color: Colors.white38, fontSize: 12)),
+                    ],
+                  ],
+                ),
+              ),
+              const SizedBox(height: 20),
+              Text(AppTranslations.translate(c, 'verify_msg'),
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: Colors.white70, fontSize: 14)),
+              const SizedBox(height: 30),
+
+              // --- 🔥 BUTTON TO GO BACK AND EDIT (WRONG INFO) 🔥 ---
+              OutlinedButton.icon(
+                onPressed: () => _abortAndGoBack(c),
+                style: OutlinedButton.styleFrom(
+                    side: const BorderSide(color: Colors.redAccent),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 20, vertical: 12),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10))),
+                icon: const Icon(Icons.edit_note_rounded,
+                    color: Colors.redAccent),
+                label: Text(
+                    AppTranslations.translate(c, 'wrong_email_prompt') ??
+                        "Wrong info? Edit",
+                    style: const TextStyle(
+                        color: Colors.redAccent, fontWeight: FontWeight.bold)),
+              ),
+
+              const SizedBox(height: 40),
+
+              if (!_isEmailVerified) ...[
+                const CircularProgressIndicator(color: Colors.teal),
+                const SizedBox(height: 40),
+                TextButton(
+                  onPressed: _canResendEmail ? () => _resendEmail(c) : null,
+                  child: Text(
+                      _canResendEmail
+                          ? AppTranslations.translate(c, 'resend_link')
+                          : "${AppTranslations.translate(c, 'resend_wait')} ($_secondsRemaining)",
+                      style: TextStyle(
+                          color: _canResendEmail
+                              ? Colors.tealAccent
+                              : Colors.white38,
+                          fontWeight: FontWeight.bold)),
+                ),
+              ] else
+                Text(AppTranslations.translate(c, 'verifying_msg'),
+                    style: const TextStyle(color: Colors.tealAccent)),
+            ],
+          ],
+        ),
+      ),
     );
   }
 }

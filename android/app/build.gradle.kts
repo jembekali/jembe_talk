@@ -17,6 +17,7 @@ if (keyPropertiesFile.exists()) {
 android {
     namespace = "com.jembetalk.app"
     
+    // 🚀 CompileSdk 35 bituma usoma amategeko mashya ya Android 15 (Itegeko rishya)
     compileSdk = 35 
 
     compileOptions {
@@ -35,7 +36,7 @@ android {
                 storeFile = rootProject.file(keyProperties["storeFile"] as String)
                 storePassword = keyProperties["storePassword"] as String
                 keyAlias = keyProperties["keyAlias"] as String
-                keyPassword = keyProperties["keyPassword"] as String // 🔥 HANO NAHAKOSOYE
+                keyPassword = keyProperties["keyPassword"] as String 
             }
         }
     }
@@ -43,11 +44,13 @@ android {
     defaultConfig {
         applicationId = "com.jembetalk.app"
         minSdk = 24
+        
+        // 🔥 TargetSdk 35 ni ryo tegeko Google Play yagusabaga (Fixed)
         targetSdk = 35 
         
-        // 🔥 Version 3 (Kugira ngo Play Store yemere fayili nshya)
-        versionCode = 13
-        versionName = "1.01"
+        // 🚀 VersionCode 16 bituma isimbura verisiyo ya 15 yari ifite amakosa (Fixed)
+        versionCode = 23
+        versionName = "1.1.1"
         
         multiDexEnabled = true 
     }
@@ -56,6 +59,7 @@ android {
         release {
             signingConfig = signingConfigs.getByName("release")
             
+            // Ibi tubireke kuri false niba bitari byarateganyijwe mbere
             isMinifyEnabled = false 
             isShrinkResources = false
             
@@ -71,10 +75,19 @@ android {
 }
 
 dependencies {
+    // 🚀 Inkingi zifasha App gukora neza (Compatibility)
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.4")
     implementation("androidx.multidex:multidex:2.0.1")
-    implementation("androidx.core:core-ktx:1.10.1")
-    implementation(platform("com.google.firebase:firebase-bom:32.7.0"))
+    implementation("androidx.core:core-ktx:1.13.1")
+    
+    // 🔥 Firebase BOM ifite amavugurura agezweho
+    implementation(platform("com.google.firebase:firebase-bom:33.1.2"))
+    implementation("com.google.firebase:firebase-analytics")
+    implementation("com.google.firebase:firebase-messaging")
+
+    // 🔥 Kurinda background crashes kuri Android 14/15
+    implementation("androidx.work:work-runtime-ktx:2.9.0")
+    implementation("com.google.android.gms:play-services-base:18.4.0")
 }
 
 flutter {

@@ -4,29 +4,25 @@ import android.content.Intent
 import android.os.Bundle
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
-import io.flutter.embedding.engine.FlutterShellArgs // 🔥 IYI NIYO TWONGEREYE
 import io.flutter.plugin.common.MethodChannel
 
 class MainActivity: FlutterActivity() {
     private val CHANNEL = "app.channel.shared.data"
     private var sharedData = mutableMapOf<String, String?>()
 
-    // 🚀 OPTIMIZATION: Ibi bituma App yihuta kandi ntigire crash kuri S9
-    // Twakuyemo "skia" renderer kugira ngo telefone ikoreshe uburyo bwayo bwihuta (Default Stable)
-    override fun getFlutterShellArgs(): FlutterShellArgs {
-        val args = super.getFlutterShellArgs()
-        args.add("--disable-impeller") 
-        return args
-    }
+    // 🚀 FIXED: Twakuyemo FlutterShellArgs kuko itera crash kuri Android 14+
+    // Gukoresha Impeller cyangwa Skia ubu byamaze gukosorerwa muri AndroidManifest.xml
 
-    // 🔗 METHOD CHANNEL: Bituma Flutter ishobora gusoma amakuru ava hanze (Sharing)
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
 
+        // 🔗 METHOD CHANNEL: Bituma Flutter ishobora gusoma amakuru ava hanze (Sharing)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL).setMethodCallHandler { call, result ->
             if (call.method == "getSharedData") {
-                result.success(sharedData)
-                sharedData = mutableMapOf() 
+                // Tanga data, hanyuma uyisibe muri memory kugira ngo itazagaruka kabiri
+                val dataToSend = HashMap(sharedData)
+                result.success(dataToSend)
+                sharedData.clear() 
             } else {
                 result.notImplemented()
             }
@@ -35,7 +31,8 @@ class MainActivity: FlutterActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        handleIntent(intent)
+        // Genzura niba hari data yinjiye app igifunguka
+        intent?.let { handleIntent(it) }
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -48,8 +45,7 @@ class MainActivity: FlutterActivity() {
     private fun handleIntent(intent: Intent) {
         val action = intent.action
         val type = intent.type
-        val data = intent.dataString 
-
+        
         if (Intent.ACTION_SEND == action && type != null) {
             if ("text/plain" == type) {
                 intent.getStringExtra(Intent.EXTRA_TEXT)?.let { text ->
@@ -57,10 +53,12 @@ class MainActivity: FlutterActivity() {
                     sharedData["value"] = text
                 }
             }
-        }
-        else if (Intent.ACTION_VIEW == action && data != null) {
-            sharedData["type"] = "view"
-            sharedData["value"] = data
+        } else if (Intent.ACTION_VIEW == action) {
+            val data = intent.dataString
+            if (data != null) {
+                sharedData["type"] = "view"
+                sharedData["value"] = data
+            }
         }
     }
 }

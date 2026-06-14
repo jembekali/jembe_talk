@@ -1,8 +1,10 @@
-// lib/contact_us_screen.dart (VERSION IVUGURUYE - WITH SUCCESS FEEDBACK)
+// lib/contact_us_screen.dart (VERSION 4.0 - MULTI-LANGUAGE SUPPORT)
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:jembe_talk/language_provider.dart'; // <--- Ingenzi
 
 class ContactUsScreen extends StatefulWidget {
   const ContactUsScreen({super.key});
@@ -15,11 +17,10 @@ class _ContactUsScreenState extends State<ContactUsScreen> {
   final TextEditingController _messageController = TextEditingController();
   bool _isSending = false;
 
-  // --- FUNCTION YO KWEREKANA KO UBUTUMWA BWAGIYE (SUCCESS DIALOG) ---
-  void _showSuccessDialog() {
+  void _showSuccessDialog(LanguageProvider lang) {
     showDialog(
       context: context,
-      barrierDismissible: false, // Bituma umuntu adahita akanda hanze ngo bivurunge
+      barrierDismissible: false,
       builder: (BuildContext context) {
         return AlertDialog(
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
@@ -28,15 +29,15 @@ class _ContactUsScreenState extends State<ContactUsScreen> {
             children: [
               const Icon(Icons.check_circle, color: Colors.green, size: 70),
               const SizedBox(height: 16),
-              const Text(
-                "Ubutumwa Bwarungitswe!",
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              Text(
+                lang.t('contact_success_title'),
+                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 10),
-              const Text(
-                "Ubutumwa bwawe bwageze kuri Admin ya Jembe Talk. Tuzagusubiza vuba bishoboka binyuze kuri konte yawe.",
+              Text(
+                lang.t('contact_success_body'),
                 textAlign: TextAlign.center,
-                style: TextStyle(color: Colors.grey),
+                style: const TextStyle(color: Colors.grey),
               ),
               const SizedBox(height: 20),
               SizedBox(
@@ -47,10 +48,10 @@ class _ContactUsScreenState extends State<ContactUsScreen> {
                     foregroundColor: Colors.white,
                   ),
                   onPressed: () {
-                    Navigator.of(context).pop(); // Funga Dialog
-                    Navigator.of(context).pop(); // Suka inyuma kuri Blocked Screen
+                    Navigator.of(context).pop(); 
+                    Navigator.of(context).pop(); 
                   },
-                  child: const Text("Sawa, Ndategereje"),
+                  child: Text(lang.t('contact_success_btn')),
                 ),
               ),
             ],
@@ -60,51 +61,41 @@ class _ContactUsScreenState extends State<ContactUsScreen> {
     );
   }
 
-  Future<void> _sendMessage() async {
+  Future<void> _sendMessage(LanguageProvider lang) async {
     final String message = _messageController.text.trim();
     if (message.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Andika ubutumwa mbere yo kohereza.")),
+        SnackBar(content: Text(lang.t('contact_empty_error'))),
       );
       return;
     }
 
-    setState(() {
-      _isSending = true;
-    });
+    setState(() => _isSending = true);
 
     try {
       final User? user = FirebaseAuth.instance.currentUser;
       
-      // Kohereza muri Firestore
       await FirebaseFirestore.instance.collection('feedback').add({
         'uid': user?.uid ?? 'Anonymous',
         'userEmail': user?.email ?? 'Nta Email',
         'message': message,
         'timestamp': FieldValue.serverTimestamp(),
         'isResolved': false,
-        'type': 'contact_us_banned_user',
+        'type': 'ban_appeal', // Kumenyesha Admin ko ari ubusabe bwo gufungurwa
       });
 
       if (mounted) {
         _messageController.clear();
-        _showSuccessDialog(); // Erekana ya Dialog y'icyizere
+        _showSuccessDialog(lang); 
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text("Ikosa ryabaye: $e"),
-            backgroundColor: Colors.red,
-          ),
+          SnackBar(content: Text("${lang.t('error_generic')} $e"), backgroundColor: Colors.red),
         );
       }
     } finally {
-      if (mounted) {
-        setState(() {
-          _isSending = false;
-        });
-      }
+      if (mounted) setState(() => _isSending = false);
     }
   }
 
@@ -116,12 +107,12 @@ class _ContactUsScreenState extends State<ContactUsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
+    final lang = Provider.of<LanguageProvider>(context);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text("Twandikire Admin"),
+        title: Text(lang.t('contact_admin_title')),
         centerTitle: true,
       ),
       body: SingleChildScrollView(
@@ -142,7 +133,7 @@ class _ContactUsScreenState extends State<ContactUsScreen> {
                   const SizedBox(width: 12),
                   Expanded(
                     child: Text(
-                      "Sobanura neza ikibazo ufite cyangwa impamvu konte yawe ikwiriye gufungurwa.",
+                      lang.t('contact_info_text'),
                       style: TextStyle(fontSize: 13, color: isDark ? Colors.white70 : Colors.black87),
                     ),
                   ),
@@ -150,23 +141,21 @@ class _ContactUsScreenState extends State<ContactUsScreen> {
               ),
             ),
             const SizedBox(height: 25),
-            const Text(
-              "Ubutumwa bwawe",
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+            Text(
+              lang.t('contact_your_msg_label'),
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
             ),
             const SizedBox(height: 10),
             TextField(
               controller: _messageController,
               maxLines: 8,
               enabled: !_isSending,
+              style: TextStyle(color: isDark ? Colors.white : Colors.black),
               decoration: InputDecoration(
-                hintText: "Andika hano...",
+                hintText: lang.t('contact_hint'),
                 fillColor: isDark ? Colors.white10 : Colors.grey.shade100,
                 filled: true,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide.none,
-                ),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
                   borderSide: const BorderSide(color: Color(0xFF1E8449), width: 2),
@@ -183,20 +172,19 @@ class _ContactUsScreenState extends State<ContactUsScreen> {
                     backgroundColor: const Color(0xFF1E8449),
                     foregroundColor: Colors.white,
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    elevation: 2,
                   ),
-                  onPressed: _isSending ? null : _sendMessage,
+                  onPressed: _isSending ? null : () => _sendMessage(lang),
                   child: _isSending 
                     ? const CircularProgressIndicator(color: Colors.white, strokeWidth: 3) 
-                    : const Text("Rungika Ubutumwa", style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
+                    : Text(lang.t('contact_btn_send'), style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
                 ),
               ),
             ),
             const SizedBox(height: 20),
-            const Center(
+            Center(
               child: Text(
-                "Tuzagusubiza mu masaha 24.",
-                style: TextStyle(color: Colors.grey, fontSize: 12),
+                lang.t('contact_footer_text'),
+                style: const TextStyle(color: Colors.grey, fontSize: 12),
               ),
             ),
           ],

@@ -1,14 +1,18 @@
+// lib/services/file_storage_service.dart (VERSION 3.1 - FULL COMPATIBILITY & PRIVACY)
+
 import 'dart:io';
 import 'dart:developer';
 import 'package:media_store_plus/media_store_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:device_info_plus/device_info_plus.dart';
+import 'package:path_provider/path_provider.dart'; // IYI NI NGOMBWA KURI VOICE NOTES
 
 enum StorageDirectoryType {
   images,
   video,
   audio,
   documents,
+  voiceNotes, // Ubwoko bushya twongeyeho
 }
 
 class FileStorageService {
@@ -19,56 +23,45 @@ class FileStorageService {
   Future<bool> requestStoragePermission(StorageDirectoryType dirType) async {
     if (!Platform.isAndroid) return true;
 
+    // Voice notes ntizisaba MediaStore permission kuko zibitse muri App's Private Folder
+    if (dirType == StorageDirectoryType.voiceNotes) return true;
+
     final androidInfo = await DeviceInfoPlugin().androidInfo;
     final sdkInt = androidInfo.version.sdkInt;
 
     Permission permission;
-    
-    // Kuva kuri Android 13 (SDK 33), impushya zaratandukanye
     if (sdkInt >= 33) {
       switch (dirType) {
-        case StorageDirectoryType.images:
-          permission = Permission.photos;
-          break;
-        case StorageDirectoryType.video:
-          permission = Permission.videos;
-          break;
-        case StorageDirectoryType.audio:
-          // Hano niho twemeza ko audio ifite uruhushya rwayo
-          permission = Permission.audio;
-          break;
-        case StorageDirectoryType.documents:
-          // Documents akenshi ntabwo zisaba uruhushya rwinshi nka media kuri Android nshya
-          return true;
+        case StorageDirectoryType.images: permission = Permission.photos; break;
+        case StorageDirectoryType.video: permission = Permission.videos; break;
+        case StorageDirectoryType.audio: permission = Permission.audio; break;
+        case StorageDirectoryType.documents: return true;
+        default: return true;
       }
     } else {
-      // Kuri Android za kera, ni uruhushya rumwe rwa 'storage'
       permission = Permission.storage;
     }
 
     final status = await permission.status;
-    if (status.isGranted) {
-      return true;
-    } else {
-      final result = await permission.request();
-      if(result.isGranted){
-        return true;
-      } else {
-        log('${permission.toString()} permission denied. Opening app settings.');
-        await openAppSettings();
-        return false;
-      }
-    }
+    if (status.isGranted) return true;
+    final result = await permission.request();
+    return result.isGranted;
   }
   
+  // 🔥 IZINA RYAGUMYE UKO RYARI RIRI KUGIRA NGO NTA KOSA RIBAHO
   Future<String?> saveFileToPublicDirectory({
     required String tempFilePath,
     required StorageDirectoryType dirType,
     required String fileName,
   }) async {
-    // Ibi ntibigikoreshwa cyane muri MediaStorePlus nshya ariko turabireka
-    MediaStore.appFolder = "Jembe Talk";
+    
+    // 1. 🔥 LOGIC YA VOICE NOTES (PRIVATE STORAGE - NO MUSIC PLAYER)
+    if (dirType == StorageDirectoryType.voiceNotes) {
+      return await _saveVoiceNotePrivately(tempFilePath, fileName);
+    }
 
+    // 2. LOGIC ISANZWE YA MEDIA (Images, Videos, Audio, Documents)
+    MediaStore.appFolder = "Jembe Talk";
     final hasPermission = await requestStoragePermission(dirType);
     if (!hasPermission) {
       log("Required permission not granted. Cannot save file.");
@@ -77,14 +70,9 @@ class FileStorageService {
 
     try {
       String relativePath;
-      
-      // Dukoresha 'DirType.download' kuri byose kugira ngo tubashe
-      // gukora folder zacu bwite nka 'Jembe Talk/...'
-      // Android izamenya ubwoko bwa fayili ishingiye kuri extension (.mp3, .jpg, etc)
       final DirType mediaStoreDirType = DirType.download;
       final DirName mediaStoreDirName = DirName.download;
 
-      // Hano niho dusobanura neza aho buri fayili igomba kujya
       switch (dirType) {
         case StorageDirectoryType.images:
           relativePath = "Jembe Talk/Jembe Talk Images";
@@ -93,15 +81,16 @@ class FileStorageService {
           relativePath = "Jembe Talk/Jembe Talk Videos";
           break;
         case StorageDirectoryType.audio:
-          // Hano twongeyemo Folder ya Audio kugira ngo iboneke neza
           relativePath = "Jembe Talk/Jembe Talk Audio";
           break;
         case StorageDirectoryType.documents:
           relativePath = "Jembe Talk/Jembe Talk Documents";
           break;
+        default:
+          relativePath = "Jembe Talk/Others";
       }
 
-      log("Saving '$fileName' type: $dirType from '$tempFilePath' to $mediaStoreDirName/$relativePath");
+      log("Saving '$fileName' type: $dirType to $mediaStoreDirName/$relativePath");
 
       final SaveInfo? saveInfo = await _mediaStore.saveFile(
         tempFilePath: tempFilePath,
@@ -110,37 +99,52 @@ class FileStorageService {
         relativePath: relativePath,
       );
 
-      if (saveInfo == null) {
-        log("Failed to save file using MediaStore. SaveInfo is null.");
-        return null;
-      }
-      
-      String? finalPath;
-      if (saveInfo.uri != null) {
-        finalPath = await _mediaStore.getFilePathFromUri(uriString: saveInfo.uri!.toString());
-      } else {
-         log("Failed to get uri from SaveInfo object.");
-         return null;
-      }
+      if (saveInfo != null && saveInfo.uri != null) {
+        String? finalPath = await _mediaStore.getFilePathFromUri(uriString: saveInfo.uri!.toString());
+        
+        // Siba file yo muri cache
+        final tempFile = File(tempFilePath);
+        if (await tempFile.exists()) await tempFile.delete();
 
-      if (finalPath == null || finalPath.isEmpty) {
-        log("getFilePathFromUri returned null or empty path.");
-        return null;
+        return finalPath;
       }
-
-      log("File saved successfully. Final path: $finalPath");
-      
-      // Turasiba fayili yo muri cache (temp) kuko yamaze kubikwa ahabona
-      final tempFile = File(tempFilePath);
-      if (await tempFile.exists()) {
-        await tempFile.delete();
-        log("Temporary file deleted: $tempFilePath");
-      }
-
-      return finalPath;
-
+      return null;
     } catch (e, s) {
-      log("Error saving file to public directory: $e", stackTrace: s);
+      log("Error saving file: $e", stackTrace: s);
+      return null;
+    }
+  }
+
+  // 🔥 FUNCTION IFITE UMUTEKANO KURI VOICE NOTES
+  Future<String?> _saveVoiceNotePrivately(String tempPath, String fileName) async {
+    try {
+      // Ibi bituma ubutumwa bw'amajwi bubikwa muri:
+      // 'Internal Storage/Android/data/com.jembe.talk/files/VoiceNotes'
+      // Iyi folder ntisomwa n'izindi App (Music Player ntishobora kuyibona)
+      final directory = await getExternalStorageDirectory();
+      if (directory == null) return null;
+
+      final voiceNoteDir = Directory('${directory.path}/VoiceNotes');
+      if (!await voiceNoteDir.exists()) {
+        await voiceNoteDir.create(recursive: true);
+        
+        // Kwemeza ko Android izahisha ibi bintu (No Media Indexing)
+        final noMediaFile = File('${voiceNoteDir.path}/.nomedia');
+        if (!await noMediaFile.exists()) await noMediaFile.create();
+      }
+
+      final String finalPath = '${voiceNoteDir.path}/$fileName';
+      final File tempFile = File(tempPath);
+      
+      if (await tempFile.exists()) {
+        await tempFile.copy(finalPath);
+        await tempFile.delete(); // Siba ya kera
+        log("Voice Note saved privately at: $finalPath");
+        return finalPath;
+      }
+      return null;
+    } catch (e) {
+      log("Error in private save: $e");
       return null;
     }
   }

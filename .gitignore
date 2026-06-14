@@ -1,58 +1,50 @@
-# Miscellaneous
-*.class
-*.log
-*.pyc
-*.swp
-.DS_Store
-.atom/
-.build/
-.buildlog/
-.history
-.svn/
-.swiftpm/
-migrate_working_dir/
+# 1. Amabanga yawe (Secrets - Ibi nibyo bya mbere)
+lib/services/r2_service.dart
+upload-keystore.jks
+*.jks
+*.keystore
+android/key.properties
+android/app/google-services.json
+ios/Runner/GoogleService-Info.plist
 
-# IntelliJ related
-*.iml
-*.ipr
-*.iws
-.idea/
-
-# The .vscode folder contains launch configuration and tasks you configure in
-# VS Code which you may wish to be included in version control, so this line
-# is commented out by default.
-#.vscode/
-
-# Flutter/Dart/Pub related
-**/doc/api/
-**/ios/Flutter/.last_build_id
+# 2. Flutter/Dart related
 .dart_tool/
 .flutter-plugins
 .flutter-plugins-dependencies
 .pub-cache/
 .pub/
+build/
 /build/
 
-# Symbolication related
+# 3. Android related
+**/android/app/debug
+**/android/app/profile
+**/android/app/release
+**/android/local.properties
+.gradle/
+Captures/
+
+# 4. iOS/macOS related
+**/ios/Flutter/.last_build_id
+**/ios/Pods/
+**/ios/.generated/
+.DS_Store
+
+# 5. IDEs (VS Code & IntelliJ)
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+.history
+
+# 6. Miscellaneous
+*.log
+*.swp
+.atom/
+.buildlog/
+.svn/
+migrate_working_dir/
 app.*.symbols
-
-# Obfuscation related
 app.*.map.json
-
-# Android Studio will place build artifacts here
-/android/app/debug
-/android/app/profile
-/android/app/release
-lib/services/r2_service.dart
-r2_service.dart
-# Firebase cache (ntibigomba kujya kuri git)
 .firebase/
-
-# Amabanga yo gusinya App (Android)
-android/key.properties
-android/app/*.jks
-android/app/*.keystore
-
-# Google Services (niba ushaka ko umushinga uba private cyane)
-android/app/google-services.json
-ios/Runner/GoogleService-Info.plist

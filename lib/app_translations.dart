@@ -4,7 +4,7 @@ class AppTranslations {
       // Welcome Screen
       'terms_title': "Amategeko n'Amabwiriza",
       'welcome_terms': "Wemeje ko ushobora gukoresha Jembe Talk mu gukurikiza amategeko n'amabwiriza agenga ubu buryo bwo guhanahana amakuru.",
-      'login_phone_btn': 'KWINJIRISHA TELEFONE',
+      'login_phone_btn': 'INJIRA NA TELEFONE',
       'read_more': 'Soma ibindi',
 
       // Login / Phone Auth Screen
@@ -17,6 +17,21 @@ class AppTranslations {
       'register_btn_text': 'IYANDIKISHE',
       'forgot_everything': 'Wibagiye na Email? Fyonda hano.',
       'back_btn': 'Subira Inyuma',
+
+      'google_pick_email': 'Gmail yo muri telefone',
+      'divider_or': 'Canke',
+      'google_email_success': 'Gmail yawe yafashwe neza!',
+      'error_account_disabled': 'Konte yanyu yahagaritswe vy\'agateganyo. nimutwandikire tubafashe.',
+      'edit_email_title': 'Kosora Email yawe',
+      'edit_email_desc': 'Niba wihenze kuri email, yikosore hano ushiremwo inziza:',
+      'email_updated_msg': 'Email yahinduwe! Raba link nshasha.',
+      'edit_wait_msg': 'Rindira urangize gukosora...',
+      'btn_edit_email': 'KOSORA EMAIL',
+      'cleaning_data': 'Turiko turafuta amakuru mabi...',
+      'btn_abort_registration': 'FUTA EMAIL USUBIRE INYUMA',
+      'wrong_email_prompt': 'Wihenze kuri Email? Subira ukosore',
+      'error_phone_exists_login': 'Iyi numero isanzwe ifise konte. fyonda Login.',
+      'error_email_exists_login': 'Iyi email isanzwe ifite konte. fyonda Login.',
 
       // Registration Screen
       'register_title': 'Fungura Konte',
@@ -233,6 +248,21 @@ class AppTranslations {
       'acc_req_info': 'Omba taarifa za akaunti',
       'acc_delete': 'Futa akaunti yangu',
 
+      'google_pick_email': 'Tumia Gmail ya simu yako',
+      'divider_or': 'au',
+      'google_email_success': 'Gmail yako imepatikana!',
+      'error_account_disabled': 'Akaunti yako imesimamishwa. Wasiliana na Support.',
+      'edit_email_title': 'Rekebisha Barua pepe',
+      'edit_email_desc': 'Kama ulikosea barua pepe, rekebisha hapa:',
+      'email_updated_msg': 'Barua pepe imebadilishwa! Angalia link mpya.',
+      'edit_wait_msg': 'Subiri unamalizia kurekebisha...',
+      'btn_edit_email': 'REKEBISHA EMAIL',
+      'cleaning_data': 'Tunafuta taarifa zisizo sahihi...',
+      'btn_abort_registration': 'FUTA EMAIL NA URUDI NYUMA',
+      'wrong_email_prompt': 'Ulikosea Barua pepe? Rudi nyuma urekebishe',
+      'error_phone_exists_login': 'Namba hii tayari inatumika. Ingia hapa.',
+      'error_email_exists_login': 'Email hii tayari inatumika. Ingia hapa.',
+
       // Delete Account (Yashizweho vuba)
       'delete_acc_title': 'Futa Akaunti Yangu',
       'delete_acc_warning': 'Kufuta akaunti yako ni kwa kudumu',
@@ -360,6 +390,21 @@ class AppTranslations {
       'acc_change_num': 'Change number',
       'acc_req_info': 'Request account info',
       'acc_delete': 'Delete my account',
+
+'google_pick_email': 'Use Gmail from phone',
+      'divider_or': 'or',
+      'google_email_success': 'Gmail successfully selected!',
+      'error_account_disabled': 'Your account is temporarily disabled. Contact Support.',
+      'edit_email_title': 'Edit Your Email',
+      'edit_email_desc': 'If you made a mistake, correct your email here:',
+      'email_updated_msg': 'Email updated! Check the new verification link.',
+      'edit_wait_msg': 'Please wait while editing...',
+      'btn_edit_email': 'EDIT EMAIL',
+      'cleaning_data': 'Cleaning up incorrect data...',
+      'btn_abort_registration': 'DELETE EMAIL AND GO BACK',
+      'wrong_email_prompt': 'Wrong Email? Go back and correct',
+      'error_phone_exists_login': 'Phone already exists. Please Login.',
+      'error_email_exists_login': 'Email already exists. Please Login.',
 
       // Delete Account (Yashizweho vuba)
       'delete_acc_title': 'Delete My Account',
@@ -503,6 +548,21 @@ class AppTranslations {
       'delete_acc_dialog_msg': 'Cette action est irréversible. Toutes vos données seront définitivement supprimées.',
       'delete_acc_dialog_no': 'NON',
       'delete_acc_dialog_yes': 'OUI, SUPPRIMER',
+
+      'google_pick_email': 'Utiliser Gmail du téléphone',
+      'divider_or': 'ou',
+      'google_email_success': 'Gmail sélectionné avec succès !',
+      'error_account_disabled': 'Votre compte est désactivé. Contactez le Support.',
+      'edit_email_title': 'Modifier votre Email',
+      'edit_email_desc': 'Si vous avez fait une erreur, corrigez-la ici :',
+      'email_updated_msg': 'Email modifié ! Vérifiez le nouveau lien.',
+      'edit_wait_msg': 'Veuillez patienter...',
+      'btn_edit_email': 'MODIFIER L\'EMAIL',
+      'cleaning_data': 'Suppression des données incorrectes...',
+      'btn_abort_registration': 'EFFACER ET RETOURNER',
+      'wrong_email_prompt': 'Mauvais Email ? Retournez pour corriger',
+      'error_phone_exists_login': 'Numéro déjà utilisé. Connectez-vous.',
+      'error_email_exists_login': 'Email déjà utilisé. Connectez-vous.',
 
       'default_user': 'Utilisateur Jembe Talk',
       'default_status': 'J\'utilise Jembe Talk',

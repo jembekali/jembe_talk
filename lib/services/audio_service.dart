@@ -1,10 +1,11 @@
-// lib/services/audio_service.dart (VERSION 2.6 - MARK AS PLAYED INTEGRATION)
+// lib/services/audio_service.dart (VERSION 2.9 - PRIVATE STORAGE COMPATIBLE & NO FREEZE)
 
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart' as just_audio;
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:jembe_talk/services/sync_service.dart'; // ✅ Twongereyemo iyi service
+import 'package:jembe_talk/services/sync_service.dart'; 
 
 class AudioPlayerService extends ChangeNotifier {
   final just_audio.AudioPlayer _player = just_audio.AudioPlayer();
@@ -97,8 +98,8 @@ class AudioPlayerService extends ChangeNotifier {
     }
   }
 
-  // ✅ KOSORA HANO: loadAudio ubu ikenera na roomId kugira ngo imenye aho ihindura Firestore
-  Future<void> loadAudio(String id, String path, bool isLocal, String roomId) async {
+  // 🔥 COMPATIBILITY: Iyi function ubu ishobora gusoma fayiri ziri mu mufuka w'ibanga (Private)
+  Future<void> loadAudio(String id, String path, bool isLocal, String roomId, String senderId) async {
     if (_currentMessageId == id) {
       await playPause();
       return;
@@ -108,11 +109,19 @@ class AudioPlayerService extends ChangeNotifier {
     _currentMessageId = id;
 
     try {
-      // ✅ TANGIRA HANO: Bwira SyncService ko iyi Voice Note yatangiye gukina
-      syncService.markVoiceNoteAsPlayed(roomId, id);
+      // 1. Mark as played (Sync with Firestore)
+      syncService.markVoiceNoteAsPlayed(roomId, id, senderId);
 
+      // 2. Play from Local or URL
       if (isLocal) {
-        await _player.setFilePath(path);
+        // 🔥 KOSORA HANO: Reba niba fayiri ihari koko (haba muri Public cyangwa Private)
+        if (await File(path).exists()) {
+          await _player.setFilePath(path);
+        } else {
+          // Niba fayiri itabonetse mu bubiko bwa telefone, ihagarike
+          debugPrint("Audio file not found at: $path");
+          return;
+        }
       } else {
         await _player.setUrl(path);
       }

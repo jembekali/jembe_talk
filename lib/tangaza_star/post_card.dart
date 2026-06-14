@@ -1,34 +1,40 @@
 // lib/tangaza_star/post_card.dart
 
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:jembe_talk/tangaza_star/comment_screen.dart'; 
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:jembe_talk/services/database_helper.dart'; // <<< IMPINDUKA: NONGEREYEHO UYU MURONGO
+import 'package:jembe_talk/services/database_helper.dart';
+import 'package:video_player/video_player.dart';
 
 class PostCard extends StatefulWidget {
-  final String postId;
-  final String userName;
-  final String userImageUrl;
-  final String postText;
-  final String? imageUrl; 
-  final int likes;
-  final List<dynamic> likedBy;
-  final int comments;
-  final int views;
+  final Map<String, dynamic> post; // Koresha Map yose kugira ngo tubone byose
+  final String? currentUserId;
+  final double? uploadProgress;
+  final bool isSharing;
+  final ValueNotifier<bool> isScreenActive;
+  final Function(Map<String, dynamic>) onLike;
+  final Function(Map<String, dynamic>) onOpenComments;
+  final Function(Map<String, dynamic>) onShowOptions;
+  final Function(BuildContext, String, String, String) onShowFullNews;
+  final VoidCallback onShareStart;
+  final Function(bool) onShareEnd;
 
   const PostCard({
     super.key,
-    required this.postId,
-    required this.userName,
-    required this.userImageUrl,
-    required this.postText,
-    this.imageUrl, 
-    required this.likes,
-    required this.likedBy,
-    required this.comments,
-    required this.views,
+    required this.post,
+    this.currentUserId,
+    this.uploadProgress,
+    this.isSharing = false,
+    required this.isScreenActive,
+    required this.onLike,
+    required this.onOpenComments,
+    required this.onShowOptions,
+    required this.onShowFullNews,
+    required this.onShareStart,
+    required this.onShareEnd,
   });
 
   @override
@@ -36,144 +42,170 @@ class PostCard extends StatefulWidget {
 }
 
 class _PostCardState extends State<PostCard> {
-  late bool _isLiked;
-  late int _likeCount;
-  final String? currentUserId = FirebaseAuth.instance.currentUser?.uid;
+  VideoPlayerController? _videoController;
+  bool _isVideoInitialized = false;
+  bool _isMuted = true;
 
   @override
   void initState() {
     super.initState();
-    _isLiked = widget.likedBy.contains(currentUserId);
-    _likeCount = widget.likes;
-  }
-
-  void _toggleLike() async {
-    if (currentUserId == null) return;
-    setState(() {
-      _isLiked = !_isLiked;
-      if (_isLiked) {
-        _likeCount++;
-      } else {
-        _likeCount--;
-      }
-    });
-    final postRef = FirebaseFirestore.instance.collection('tangaza_posts').doc(widget.postId);
-    if (_isLiked) {
-      await postRef.update({'likedBy': FieldValue.arrayUnion([currentUserId]), 'likes': FieldValue.increment(1)});
-    } else {
-      await postRef.update({'likedBy': FieldValue.arrayRemove([currentUserId]), 'likes': FieldValue.increment(-1)});
+    if (widget.post[DatabaseHelper.colVideoUrl] != null) {
+      _initializeVideo();
     }
   }
 
-  // >>>>> IMPINDUKA NYAMUKURU IRI HANO <<<<<
-  void _openComments() {
-    // Turema agasanduku k'amakuru (Map) CommentScreen ikeneye
-    final postDataForComment = {
-      DatabaseHelper.colPostId: widget.postId,
-      DatabaseHelper.colImageUrl: widget.imageUrl,
-      // videoUrl ntiri muri PostCard, rero CommentScreen izabona null, kandi irabizi kubyitwaramo
-      DatabaseHelper.colVideoUrl: null, 
-    };
+  // LOGIC Y'INGEZI: Local vs Network
+  void _initializeVideo() {
+    final String videoPath = widget.post[DatabaseHelper.colVideoUrl] ?? "";
+    if (videoPath.isEmpty) return;
 
-    Navigator.of(context).push(MaterialPageRoute(
-      builder: (context) => CommentScreen(postData: postDataForComment),
-    ));
+    // 1. Reba niba ari file yo muri terefone (Local Path)
+    if (videoPath.startsWith('/') || videoPath.contains('com.jembe.talk')) {
+      File localFile = File(videoPath);
+      if (localFile.existsSync()) {
+        // Koresha video yo muri terefone (High Quality)
+        _videoController = VideoPlayerController.file(localFile);
+      } else {
+        // Niba file itagihari, shakira kuri internet (niba URL ihari)
+        // Icyitonderwa: Hano turatunganya niba 'videoUrl' yarahindutse cloud link
+        _videoController = VideoPlayerController.networkUrl(Uri.parse(videoPath));
+      }
+    } else {
+      // 2. Niba ari URL isanzwe (Network)
+      _videoController = VideoPlayerController.networkUrl(Uri.parse(videoPath));
+    }
+
+    _videoController?.initialize().then((_) {
+      if (mounted) {
+        setState(() {
+          _isVideoInitialized = true;
+          _videoController!.setLooping(true);
+          _videoController!.setVolume(_isMuted ? 0 : 1);
+        });
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _videoController?.dispose();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    final post = widget.post;
+    final String type = post[DatabaseHelper.colVideoUrl] != null ? 'video' : (post[DatabaseHelper.colImageUrl] != null ? 'image' : 'text');
+
     return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 10.0, vertical: 6.0),
-      elevation: 2.0,
+      margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      color: const Color(0xFF15202B),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
       clipBehavior: Clip.antiAlias,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.0)),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12.0, 12.0, 12.0, 0),
-            child: Row(
-              children: [
-                CircleAvatar(
-                  radius: 20,
-                  backgroundColor: Colors.grey[300],
-                  backgroundImage: widget.userImageUrl.isNotEmpty ? CachedNetworkImageProvider(widget.userImageUrl) : null,
-                  child: widget.userImageUrl.isEmpty ? const Icon(Icons.person, color: Colors.white) : null,
-                ),
-                const SizedBox(width: 10),
-                Text(widget.userName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-              ],
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 8.0),
-            child: Text(widget.postText, style: const TextStyle(fontSize: 15)),
-          ),
-          
-          if (widget.imageUrl != null && widget.imageUrl!.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8.0),
-              child: CachedNetworkImage(
-                imageUrl: widget.imageUrl!,
-                fit: BoxFit.cover,
-                width: double.infinity,
-                placeholder: (context, url) => Container(
-                  height: 200,
-                  color: Colors.grey[300],
-                  child: const Center(child: CircularProgressIndicator()),
-                ),
-                errorWidget: (context, url, error) => const Icon(Icons.error),
-              ),
-            ),
+          _buildHeader(),
+          _buildContent(),
+          if (type != 'text') _buildMediaSection(type),
+          _buildFooter(),
+          if (widget.uploadProgress != null && widget.uploadProgress! < 1.0)
+            LinearProgressIndicator(value: widget.uploadProgress, backgroundColor: Colors.white10, color: Colors.amberAccent),
+        ],
+      ),
+    );
+  }
 
-          Padding(
-            padding: const EdgeInsets.fromLTRB(4.0, 0, 12.0, 8.0),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Row(
-                  children: [
-                    IconButton(
-                      icon: Icon(_isLiked ? Icons.favorite : Icons.favorite_border, color: _isLiked ? Colors.red : Colors.grey, size: 22),
-                      onPressed: _toggleLike,
-                    ),
-                    Text(_likeCount.toString()),
-                  ],
+  Widget _buildHeader() {
+    return ListTile(
+      leading: CircleAvatar(
+        backgroundImage: widget.post[DatabaseHelper.colUserImageUrl] != null 
+          ? CachedNetworkImageProvider(widget.post[DatabaseHelper.colUserImageUrl]) 
+          : null,
+        child: widget.post[DatabaseHelper.colUserImageUrl] == null ? const Icon(Icons.person) : null,
+      ),
+      title: Text(widget.post[DatabaseHelper.colUserName] ?? "User", style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+      subtitle: Text(widget.post[DatabaseHelper.colCategory] ?? "General", style: const TextStyle(color: Colors.white54, fontSize: 12)),
+      trailing: IconButton(icon: const Icon(Icons.more_vert, color: Colors.white54), onPressed: () => widget.onShowOptions(widget.post)),
+    );
+  }
+
+  Widget _buildContent() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (widget.post[DatabaseHelper.colTitle] != null)
+            Text(widget.post[DatabaseHelper.colTitle], style: const TextStyle(color: Colors.amberAccent, fontWeight: FontWeight.bold, fontSize: 16)),
+          const SizedBox(height: 5),
+          Text(widget.post[DatabaseHelper.colText] ?? "", style: const TextStyle(color: Colors.white, fontSize: 14)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMediaSection(String type) {
+    if (type == 'video') {
+      return AspectRatio(
+        aspectRatio: _isVideoInitialized ? _videoController!.value.aspectRatio : 16 / 9,
+        child: Container(
+          color: Colors.black,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              if (_isVideoInitialized) VideoPlayer(_videoController!),
+              if (!_isVideoInitialized) const CircularProgressIndicator(color: Colors.amberAccent),
+              Positioned(
+                bottom: 10, right: 10,
+                child: IconButton(
+                  icon: Icon(_isMuted ? Icons.volume_off : Icons.volume_up, color: Colors.white70),
+                  onPressed: () => setState(() { _isMuted = !_isMuted; _videoController?.setVolume(_isMuted ? 0 : 1); }),
                 ),
-                InkWell(
-                  onTap: _openComments,
-                  borderRadius: BorderRadius.circular(20),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.comment_outlined, size: 20, color: Colors.grey),
-                        const SizedBox(width: 5),
-                        StreamBuilder<DocumentSnapshot>(
-                          stream: FirebaseFirestore.instance.collection('tangaza_posts').doc(widget.postId).snapshots(),
-                          builder: (context, snapshot) {
-                            if (!snapshot.hasData) return Text(widget.comments.toString());
-                            final data = snapshot.data!.data() as Map<String, dynamic>;
-                            return Text((data['comments'] ?? 0).toString());
-                          },
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 8.0),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.visibility_outlined, size: 20, color: Colors.grey),
-                      const SizedBox(width: 5),
-                      Text('${widget.views.toString()} Views'),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          )
+              ),
+              GestureDetector(
+                onTap: () {
+                  setState(() {
+                    _videoController!.value.isPlaying ? _videoController!.pause() : _videoController!.play();
+                  });
+                },
+                child: Center(child: Icon(_videoController?.value.isPlaying == true ? null : Icons.play_arrow, size: 60, color: Colors.white54)),
+              )
+            ],
+          ),
+        ),
+      );
+    } else {
+      // Logic y'ifoto (Local vs Network)
+      final String imgPath = widget.post[DatabaseHelper.colImageUrl] ?? "";
+      final bool isLocal = imgPath.startsWith('/');
+      return isLocal 
+        ? Image.file(File(imgPath), fit: BoxFit.cover, width: double.infinity)
+        : CachedNetworkImage(imageUrl: imgPath, fit: BoxFit.cover, width: double.infinity, placeholder: (context, url) => Container(height: 200, color: Colors.white10));
+    }
+  }
+
+  Widget _buildFooter() {
+    bool isLiked = widget.post[DatabaseHelper.colIsLikedByMe] == 1;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Row(children: [
+            IconButton(icon: Icon(isLiked ? Icons.favorite : Icons.favorite_border, color: isLiked ? Colors.red : Colors.white54), onPressed: () => widget.onLike(widget.post)),
+            Text('${widget.post[DatabaseHelper.colLikes] ?? 0}', style: const TextStyle(color: Colors.white70)),
+          ]),
+          Row(children: [
+            IconButton(icon: const Icon(Icons.comment_outlined, color: Colors.white54), onPressed: () => widget.onOpenComments(widget.post)),
+            Text('${widget.post[DatabaseHelper.colCommentsCount] ?? 0}', style: const TextStyle(color: Colors.white70)),
+          ]),
+          Row(children: [
+            const Icon(Icons.remove_red_eye_outlined, color: Colors.white54, size: 20),
+            const SizedBox(width: 5),
+            Text('${widget.post[DatabaseHelper.colViews] ?? 0}', style: const TextStyle(color: Colors.white70)),
+          ]),
+          IconButton(icon: const Icon(Icons.share_outlined, color: Colors.white54), onPressed: widget.onShareStart),
         ],
       ),
     );

@@ -1,4 +1,4 @@
-// lib/services/share_service.dart
+// lib/services/share_service.dart (VERSION 2.0 - UNIFIED LINKS)
 
 import 'dart:io';
 import 'package:flutter/foundation.dart';
@@ -9,7 +9,7 @@ class ShareService {
   static final ShareService instance = ShareService._();
   ShareService._();
 
-  // Iyi link ihuye neza na Firebase Project ID yawe 'jembe-talk-1'
+  // Iyi link niyo App izajya igenderaho isuzuma niba ubutumwa ari Post ya Tangaza Star
   static const String _baseUrl = "https://jembe-talk-1.web.app/post";
 
   Future<void> sharePost({
@@ -20,20 +20,20 @@ class ShareService {
     String? localThumbnailPath,
   }) async {
     try {
-      // 🚀 HANO NAHAHINDURYE: Bishyira "TANGAZA STAR ⭐" imbere
-      // Niba content irimo ubusa, hagenda gusa iryo jambo n'inyenyeri
+      // Shaka umutwe w'ubutumwa: "TANGAZA STAR ⭐"
       final String header = content.isEmpty ? "TANGAZA STAR ⭐" : "TANGAZA STAR ⭐\n$content";
       
+      // Remeranya link ihoraho: .../post?id=POST_ID
       final String shareText = "$header\n\nView post here: $_baseUrl?id=$postId";
 
       if (localThumbnailPath != null && File(localThumbnailPath).existsSync()) {
-        // Gusangiza ubutumwa hamwe n'ifoto (Thumbnail)
+        // Share hamwe n'ifoto (Thumbnail)
         await Share.shareXFiles(
           [XFile(localThumbnailPath)], 
           text: shareText
         );
       } else {
-        // Gusangiza ubutumwa bw'inyandiko na Link gusa
+        // Share inyandiko na Link gusa
         await Share.share(shareText);
       }
     } catch (e) {

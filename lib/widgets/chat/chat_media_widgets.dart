@@ -1,4 +1,4 @@
-// lib/widgets/chat/chat_media_widgets.dart (VERSION 7.1 - FIXED LOAD_AUDIO ARGUMENTS & FULL SYNC)
+// lib/widgets/chat/chat_media_widgets.dart (VERSION 7.3 - ZERO FUNCTIONALITY LOSS - FIXED SYNC)
 
 import 'dart:async';
 import 'dart:io';
@@ -67,7 +67,7 @@ class _ImageBubbleState extends State<ImageBubble> {
 }
 
 // ===========================================================================
-// 2. VOICE BUBBLE (FIXED: LOAD_AUDIO ARGUMENTS)
+// 2. VOICE BUBBLE (FIXED ARGUMENTS)
 // ===========================================================================
 class VoiceBubble extends StatefulWidget {
   final Map<String, dynamic> messageData;
@@ -150,8 +150,14 @@ class _VoiceBubbleState extends State<VoiceBubble> {
           width: 38, height: 38,
           child: exists 
                 ? GestureDetector(onTap: () { 
-                    // ✅ KOSORA: Twongereyemo parameter ya 4 (chatRoomID)
-                    playerSvc.loadAudio(widget.messageData['id'], local!, true, widget.messageData['chatRoomID']); 
+                    // ✅ FIXED: Pass exactly 5 arguments: id, path, isLocal, roomId, senderId
+                    playerSvc.loadAudio(
+                      widget.messageData['id'], 
+                      local!, 
+                      true, 
+                      widget.messageData['chatRoomID'], 
+                      widget.messageData['senderID']
+                    ); 
                   }, child: Icon(isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded, color: isMe ? Colors.white : (isPlayed ? Colors.grey : Colors.blue), size: 36))
                 : GestureDetector(onTap: _toggleD, child: _isD ? Stack(alignment: Alignment.center, children: [CircularProgressIndicator(value: _p, color: Colors.blue, strokeWidth: 2), const Icon(Icons.close, size: 14)]) : const Icon(Icons.download_for_offline, color: Colors.blue, size: 32)),
         ),
@@ -205,7 +211,16 @@ class _AudioFileBubbleState extends State<AudioFileBubble> {
     final textColor = isMe ? Colors.white : Colors.black87;
     return Container(width: 270, padding: const EdgeInsets.fromLTRB(8, 4, 8, 4), decoration: BoxDecoration(color: cardColor, borderRadius: BorderRadius.circular(12)), child: Row(children: [
         SizedBox(width: 36, height: 36, child: exists 
-          ? GestureDetector(onTap: () => playerSvc.loadAudio(widget.messageData['id'], local!, true, widget.messageData['chatRoomID']), child: Icon(isPlaying ? Icons.pause_circle_filled : Icons.play_circle_filled, color: accentColor, size: 36)) 
+          ? GestureDetector(onTap: () {
+              // ✅ FIXED: Pass exactly 5 arguments: id, path, isLocal, roomId, senderId
+              playerSvc.loadAudio(
+                widget.messageData['id'], 
+                local!, 
+                true, 
+                widget.messageData['chatRoomID'],
+                widget.messageData['senderID']
+              );
+            }, child: Icon(isPlaying ? Icons.pause_circle_filled : Icons.play_circle_filled, color: accentColor, size: 36)) 
           : GestureDetector(onTap: _toggleD, child: _isD ? Stack(alignment: Alignment.center, children: [CircularProgressIndicator(value: _p, color: Colors.white, strokeWidth: 2), const Icon(Icons.close, color: Colors.white, size: 14)]) : Icon(Icons.download_for_offline, color: accentColor, size: 36))),
         const SizedBox(width: 8),
         Expanded(child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [

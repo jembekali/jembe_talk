@@ -1,4 +1,4 @@
-// lib/widgets/chat/message_bubble.dart (VERSION 4.20 - VOICE NOTE STATUS INDICATOR)
+// lib/widgets/chat/message_bubble.dart (VERSION 4.38 - DEEP LINK & REPLY JUMP FIXED)
 
 import 'dart:async';
 import 'dart:convert';
@@ -17,6 +17,7 @@ import '../../language_provider.dart';
 import '../../services/database_helper.dart';
 import '../../services/chat_message_service.dart';
 import '../../services/sync_service.dart';
+import '../../tangaza_star/tangaza_star_screen.dart'; // ✅ Menya ko iyi import ihari
 import 'chat_media_widgets.dart';
 
 class MessageBubble extends StatefulWidget {
@@ -63,7 +64,10 @@ class MessageBubble extends StatefulWidget {
   State<MessageBubble> createState() => _MessageBubbleState();
 }
 
-class _MessageBubbleState extends State<MessageBubble> {
+class _MessageBubbleState extends State<MessageBubble> with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true; 
+
   bool _actionTaken = false;
   Map<String, dynamic>? _decodedReply;
   Map<String, dynamic>? _decodedContact;
@@ -74,7 +78,7 @@ class _MessageBubbleState extends State<MessageBubble> {
   void initState() {
     super.initState();
     _timeFormatter = DateFormat.Hm();
-    _decodeData();
+    _decodeData(); 
     _startInvitationExpiryCheck();
   }
 
@@ -101,7 +105,10 @@ class _MessageBubbleState extends State<MessageBubble> {
   }
 
   @override
-  void dispose() { _gameExpiryTimer?.cancel(); super.dispose(); }
+  void dispose() { 
+    _gameExpiryTimer?.cancel(); 
+    super.dispose(); 
+  }
 
   @override
   void didUpdateWidget(MessageBubble oldWidget) {
@@ -115,24 +122,46 @@ class _MessageBubbleState extends State<MessageBubble> {
   void _decodeData() {
     try {
       final replyStr = widget.messageData['replyingTo'];
-      if (replyStr != null) _decodedReply = jsonDecode(replyStr);
+      if (replyStr != null && replyStr is String && replyStr.isNotEmpty) {
+        _decodedReply = jsonDecode(replyStr);
+      } else {
+        _decodedReply = null;
+      }
       if (widget.messageData['messageType'] == 'contact') {
         _decodedContact = jsonDecode(widget.messageData['message'] ?? '{}');
       }
     } catch (e) { log("Error decode: $e"); }
   }
 
+  BorderRadius _getBorderRadius() {
+    const double r = 18.0; const double s = 4.0;
+    if (widget.isMe) {
+      return BorderRadius.only(
+        topLeft: const Radius.circular(r), bottomLeft: const Radius.circular(r),
+        topRight: Radius.circular(widget.isFirstInGroup ? r : s),
+        bottomRight: Radius.circular(widget.isLastInGroup ? r : s),
+      );
+    } else {
+      return BorderRadius.only(
+        topRight: const Radius.circular(r), bottomRight: const Radius.circular(r),
+        topLeft: Radius.circular(widget.isFirstInGroup ? r : s),
+        bottomLeft: Radius.circular(widget.isLastInGroup ? r : s),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    super.build(context); 
     final theme = Theme.of(context);
     final String type = widget.messageData['messageType'] ?? 'text';
     final bool isMe = widget.isMe;
 
-    return RepaintBoundary(
+    return RepaintBoundary( 
       child: Slidable(
         key: ValueKey(widget.messageData['id']),
         startActionPane: ActionPane(
-          motion: const BehindMotion(),
+          motion: const DrawerMotion(), 
           extentRatio: 0.15,
           children: [
             CustomSlidableAction(
@@ -142,19 +171,19 @@ class _MessageBubbleState extends State<MessageBubble> {
             ),
           ],
         ),
-        endActionPane: _buildEndActionPane(type, theme),
+        endActionPane: _buildEndActionPane(theme, type),
         child: _buildBubbleContent(theme, type, isMe),
       ),
     );
   }
 
-  ActionPane? _buildEndActionPane(String type, ThemeData theme) {
+  ActionPane? _buildEndActionPane(ThemeData theme, String type) {
     final isEdited = (widget.messageData['isEdited'] ?? 0) == 1;
     final msgTime = DateTime.fromMillisecondsSinceEpoch(widget.messageData['timestamp'] ?? 0);
     final bool canEdit = widget.isMe && type == 'text' && DateTime.now().difference(msgTime).inMinutes < 15 && !isEdited;
 
     return ActionPane(
-      motion: const BehindMotion(),
+      motion: const DrawerMotion(),
       extentRatio: canEdit ? 0.35 : 0.15,
       children: [
         if (canEdit)
@@ -170,8 +199,6 @@ class _MessageBubbleState extends State<MessageBubble> {
     final isFailed = status == 'failed' || status == 'canceled';
     final bool isMedia = ['image', 'video', 'voice_note', 'audio_file', 'document'].contains(type);
     final bool isVisual = type == 'video' || type == 'image';
-    
-    // ✅ VOICE NOTE STATUS
     final bool isPlayed = (widget.messageData['isPlayed'] ?? 0) == 1;
 
     final Color bubbleColor = isMe ? theme.colorScheme.primary : theme.colorScheme.surface;
@@ -184,13 +211,13 @@ class _MessageBubbleState extends State<MessageBubble> {
       },
       onTap: () => widget.onTap?.call(widget.messageData['id']),
       child: Container(
-        color: widget.isHighlighted ? theme.colorScheme.primary.withOpacity(0.1) : Colors.transparent,
+        color: widget.isHighlighted ? theme.colorScheme.primary.withOpacity(0.12) : Colors.transparent,
         padding: EdgeInsets.only(bottom: widget.isLastInGroup ? 8 : 1, top: widget.isFirstInGroup ? 4 : 0),
         child: Align(
           alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
           child: Container(
             margin: const EdgeInsets.symmetric(horizontal: 12),
-            padding: (type == 'large_emoji' || type == 'contact' || type == 'voice_note') 
+            padding: (type == 'large_emoji' || type == 'contact' || type == 'voice_note' || isVisual) 
                 ? EdgeInsets.zero 
                 : const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
             constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.78),
@@ -205,14 +232,17 @@ class _MessageBubbleState extends State<MessageBubble> {
                   crossAxisAlignment: CrossAxisAlignment.end,
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    _buildReplyPreview(theme, isMe),
-                    // ✅ TUYIHEREJE isPlayed KUGIRA NGO IJWI RIHINDURE IBARA
+                    if (_decodedReply != null) 
+                      GestureDetector(
+                        onTap: () { if (_decodedReply!['id'] != null) widget.onReplyTap?.call(_decodedReply!['id']); },
+                        child: _buildReplyPreview(theme, isMe),
+                      ),
                     _buildMessageContent(type, isMe, theme, isUploading || isFailed, isPlayed),
-                    if (type != 'deleted') _buildFooter(isMe, theme, isPlayed && type == 'voice_note'),
+                    if (type != 'deleted') _buildFooter(isMe, theme, isPlayed),
                   ],
                 ),
                 if (isMe && isMedia && (isUploading || isFailed)) 
-                  _buildUploadOverlay(isVisual, type, isUploading, isFailed),
+                   _buildUploadOverlay(isVisual, type, isUploading, isFailed),
               ],
             ),
           ),
@@ -228,34 +258,44 @@ class _MessageBubbleState extends State<MessageBubble> {
 
     switch (type) {
       case 'text':
-        if (!text.contains("http")) return Text(text, style: TextStyle(color: textColor, fontSize: 15.5, height: 1.3));
         return Linkify(
-          onOpen: (link) async { if (await canLaunchUrl(Uri.parse(link.url))) await launchUrl(Uri.parse(link.url)); },
+          onOpen: (link) async { 
+            final String url = link.url;
+            // 🔥 TANGAZA STAR DEEP LINK: Intercept URL for In-App Navigation
+            if (url.contains('jembe-talk-1.web.app/post') && url.contains('id=')) {
+              try {
+                final uri = Uri.parse(url);
+                final postId = uri.queryParameters['id'];
+                if (postId != null) {
+                  Navigator.of(context).push(MaterialPageRoute(builder: (context) => TangazaStarScreen(targetPostId: postId)));
+                  return; 
+                }
+              } catch (_) {}
+            }
+            // STANDARD BROWSER OPEN
+            if (await canLaunchUrl(Uri.parse(url))) await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+          },
           text: text, style: TextStyle(color: textColor, fontSize: 15.5, height: 1.3),
-          linkStyle: TextStyle(color: isMe ? Colors.cyanAccent : Colors.blue, fontWeight: FontWeight.bold),
+          linkStyle: TextStyle(color: isMe ? Colors.cyanAccent : Colors.blue, fontWeight: FontWeight.bold, decoration: TextDecoration.underline),
         );
       case 'image': return ImageBubble(messageData: widget.messageData, isUploadingOrFailed: isUploadingOrFailed);
       case 'video': return VideoPlayerBubble(messageData: widget.messageData, caption: text, isUploadingOrFailed: isUploadingOrFailed);
-      
       case 'voice_note':
-      case 'audio_file': 
-        // ✅ TWONGEREYE isPlayed KURI VOICE BUBBLE
-        return VoiceBubble(messageData: widget.messageData, isPlayed: isPlayed);
-        
+      case 'audio_file': return VoiceBubble(messageData: widget.messageData, isPlayed: isPlayed);
       case 'document': return DocumentBubble(messageData: widget.messageData, textColor: textColor);
       case 'contact': return ContactBubble(contactData: _decodedContact ?? {});
       case 'large_emoji': return Text(text, style: const TextStyle(fontSize: 55));
       case 'dame_invitation':
         return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(text, style: TextStyle(color: textColor, fontStyle: FontStyle.italic)),
+          Padding(padding: const EdgeInsets.all(8.0), child: Text(text, style: TextStyle(color: textColor, fontStyle: FontStyle.italic))),
           if (!widget.isMe && !_actionTaken) 
-            Padding(padding: const EdgeInsets.only(top: 10), child: Row(mainAxisSize: MainAxisSize.min, children: [
+            Padding(padding: const EdgeInsets.fromLTRB(8, 0, 8, 8), child: Row(mainAxisSize: MainAxisSize.min, children: [
               TextButton(onPressed: () { setState(() => _actionTaken = true); widget.onDeclineInvitation?.call(widget.messageData); }, child: Text(lang.t('dialog_no'), style: const TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold))),
               const SizedBox(width: 12),
               ElevatedButton(onPressed: () { setState(() => _actionTaken = true); widget.onAcceptInvitation?.call(); }, style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white, elevation: 0, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))), child: Text(lang.t('dialog_yes'))),
             ]))
         ]);
-      case 'deleted': return const Text("Message deleted", style: TextStyle(fontStyle: FontStyle.italic, color: Colors.grey));
+      case 'deleted': return const Padding(padding: EdgeInsets.all(8.0), child: Text("Message deleted", style: TextStyle(fontStyle: FontStyle.italic, color: Colors.grey)));
       default: return Text(text, style: TextStyle(color: textColor));
     }
   }
@@ -263,22 +303,18 @@ class _MessageBubbleState extends State<MessageBubble> {
   Widget _buildFooter(bool isMe, ThemeData theme, bool voicePlayed) {
     final status = widget.messageData['status'] ?? 'sent';
     return Padding(
-      padding: const EdgeInsets.only(top: 2),
+      padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 8),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // ✅ BLUE DOT FOR UNPLAYED VOICE NOTES
-          if (!isMe && widget.messageData['messageType'] == 'voice_note' && !voicePlayed)
-            Container(width: 6, height: 6, margin: const EdgeInsets.only(right: 4), decoration: const BoxDecoration(color: Colors.blue, shape: BoxShape.circle)),
-          
-          Text(_timeFormatter.format(DateTime.fromMillisecondsSinceEpoch(widget.messageData['timestamp'] ?? 0)), style: TextStyle(fontSize: 9, color: isMe ? Colors.white70 : Colors.grey, fontWeight: FontWeight.w500)),
-          if (isMe) ...[const SizedBox(width: 4), _getStatusIcon(status)],
+          Text(_timeFormatter.format(DateTime.fromMillisecondsSinceEpoch(widget.messageData['timestamp'] ?? 0)), 
+               style: TextStyle(fontSize: 9, color: isMe ? Colors.white70 : Colors.grey[600], fontWeight: FontWeight.w500)),
+          if (isMe) ...[ const SizedBox(width: 4), _getStatusIcon(status) ],
         ],
       ),
     );
   }
 
-  // ... (Ibindi bintu nka _getStatusIcon na _getBorderRadius bigume uko byari biri)
   Widget _getStatusIcon(String status) {
     IconData icon; Color color;
     if (status == 'seen') { icon = Icons.visibility_rounded; color = Colors.cyanAccent; }
@@ -288,50 +324,28 @@ class _MessageBubbleState extends State<MessageBubble> {
     return Icon(icon, size: 13, color: color);
   }
 
-  BorderRadius _getBorderRadius() {
-    const double r = 18.0; const double s = 4.0;
-    return widget.isMe 
-      ? BorderRadius.only(topLeft: const Radius.circular(r), bottomLeft: const Radius.circular(r), topRight: Radius.circular(widget.isFirstInGroup ? r : s), bottomRight: Radius.circular(widget.isLastInGroup ? r : s))
-      : BorderRadius.only(topRight: const Radius.circular(r), bottomRight: const Radius.circular(r), topLeft: Radius.circular(widget.isFirstInGroup ? r : s), bottomLeft: Radius.circular(widget.isLastInGroup ? r : s));
-  }
-
   Widget _buildReplyPreview(ThemeData theme, bool isMe) {
     if (_decodedReply == null) return const SizedBox.shrink();
     return Container(
-      margin: const EdgeInsets.only(bottom: 6),
-      padding: const EdgeInsets.all(6),
-      decoration: BoxDecoration(
-        color: Colors.black12,
-        borderRadius: BorderRadius.circular(8),
-        border: Border(left: BorderSide(color: isMe ? Colors.white54 : theme.colorScheme.primary, width: 3)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(_decodedReply!['senderID'] == FirebaseAuth.instance.currentUser?.uid ? "You" : widget.receiverDisplayName, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 10, color: isMe ? Colors.white : theme.colorScheme.primary)),
-          Text(_decodedReply!['message'] ?? "", maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11, color: Colors.white70)),
-        ],
-      ),
+      width: double.infinity,
+      margin: const EdgeInsets.fromLTRB(4, 4, 4, 6), padding: const EdgeInsets.all(6),
+      decoration: BoxDecoration(color: Colors.black12, borderRadius: BorderRadius.circular(8), border: Border(left: BorderSide(color: isMe ? Colors.white54 : theme.colorScheme.primary, width: 3))),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(_decodedReply!['senderID'] == FirebaseAuth.instance.currentUser?.uid ? "You" : widget.receiverDisplayName, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 10, color: isMe ? Colors.white : theme.colorScheme.primary)),
+        Text(_decodedReply!['message'] ?? "", maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11, color: Colors.white70)),
+      ]),
     );
   }
 
   Widget _buildUploadOverlay(bool isVisual, String type, bool isUploading, bool isFailed) {
     return Positioned(
-      bottom: isVisual ? (type == 'video' ? 45 : 8) : 5, 
-      right: isVisual ? 8 : 5,
+      bottom: isVisual ? (type == 'video' ? 45 : 8) : 5, right: isVisual ? 8 : 5,
       child: GestureDetector(
-        onTap: () {
-          if (isFailed) widget.onRetryUpload?.call();
-          else syncService.cancelUpload(widget.messageData['id']);
-        },
+        onTap: () { if (isFailed) widget.onRetryUpload?.call(); else syncService.cancelUpload(widget.messageData['id']); },
         child: Container(
-          width: 32, height: 32,
-          decoration: BoxDecoration(color: Colors.black.withOpacity(0.7), shape: BoxShape.circle),
+          width: 32, height: 32, decoration: BoxDecoration(color: Colors.black.withOpacity(0.7), shape: BoxShape.circle),
           child: isUploading
-              ? Stack(alignment: Alignment.center, children: [
-                  CircularProgressIndicator(value: widget.uploadProgress ?? 0.1, strokeWidth: 2.5, color: Colors.white, backgroundColor: Colors.white10),
-                  const Icon(Icons.close, color: Colors.white, size: 14),
-                ])
+              ? Stack(alignment: Alignment.center, children: [ CircularProgressIndicator(value: widget.uploadProgress ?? 0.1, strokeWidth: 2.5, color: Colors.white, backgroundColor: Colors.white10), const Icon(Icons.close, color: Colors.white, size: 14) ])
               : const Icon(Icons.refresh, color: Colors.white, size: 18),
         ),
       ),

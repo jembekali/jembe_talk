@@ -1,5 +1,6 @@
-// lib/services/chat_repository.dart (VERSION 30.6 - FULLY OPTIMIZED & SMART NAMES)
+// lib/services/chat_repository.dart (VERSION 49.1 - LAST MESSAGE FIX - STABLE)
 
+import 'dart:async';
 import 'dart:developer';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -12,26 +13,102 @@ class ChatRepository {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final DatabaseHelper _dbHelper = DatabaseHelper.instance;
 
-  // ---------------------------------------------------------
-  // 1. ISOMA SQL (Kuri Contacts Tab)
-  // ---------------------------------------------------------
+  // ---------------------------------------------------------------------------
+  // 1. RECENT CHATS: Igarura chats zose n'amazina (Priority: Local > Firebase)
+  // ---------------------------------------------------------------------------
+  Future<List<ChatData>> getAllRecentChats(String currentUserId) async {
+    try {
+      final db = await _dbHelper.database;
+
+      // 🔥 FIX: Ubu SQL ikoresha Timestamp aho gukoresha ID kugira ngo ubutumwa bwoherejwe n'ubwakiriye bwose buboneke
+      final List<Map<String, dynamic>> lastMsgs = await db.rawQuery('''
+        SELECT * FROM ${DatabaseHelper.tableMessages} 
+        WHERE ${DatabaseHelper.columnTimestamp} IN (
+          SELECT MAX(${DatabaseHelper.columnTimestamp}) 
+          FROM ${DatabaseHelper.tableMessages} 
+          GROUP BY ${DatabaseHelper.columnChatRoomID}
+        )
+        ORDER BY ${DatabaseHelper.columnTimestamp} DESC
+      ''');
+
+      if (lastMsgs.isEmpty) return [];
+
+      final List<Map<String, dynamic>> allContacts = await _dbHelper.getJembeContacts();
+      final Map<String, Map<String, dynamic>> contactCache = {};
+      for (var c in allContacts) {
+        String? uid = c[DatabaseHelper.colUserId]?.toString();
+        if (uid != null) contactCache[uid] = c;
+      }
+
+      List<ChatData> recentChats = [];
+      for (var msg in lastMsgs) {
+        String sID = msg[DatabaseHelper.columnSenderID]?.toString() ?? "";
+        String rID = msg[DatabaseHelper.columnReceiverID]?.toString() ?? "";
+        String roomId = msg[DatabaseHelper.columnChatRoomID]?.toString() ?? "";
+        String otherUserId = (sID == currentUserId) ? rID : sID;
+        if (otherUserId.isEmpty) continue;
+
+        final contact = contactCache[otherUserId];
+        String displayName = "";
+        
+        if (otherUserId == 'jembe_talk_official_admin') {
+          displayName = "Jembe Talk";
+        } else if (contact != null) {
+          String local = contact['localContactName']?.toString() ?? "";
+          String fb = contact[DatabaseHelper.colDisplayName]?.toString() ?? "";
+          String phone = contact[DatabaseHelper.colPhoneNumber]?.toString() ?? "";
+
+          if (local.trim().isNotEmpty) displayName = local;
+          else if (fb.trim().isNotEmpty) displayName = fb;
+          else if (phone.trim().isNotEmpty) displayName = phone;
+          else displayName = "Jembe User";
+        } else {
+          displayName = "Jembe User (${otherUserId.substring(0, 4)})";
+          _triggerImmediateContactSync(otherUserId);
+        }
+
+        int unread = await _dbHelper.getUnreadMessagesCount(roomId, currentUserId);
+        
+        recentChats.add(ChatData(
+          userId: otherUserId,
+          displayName: displayName,
+          photoUrl: contact?[DatabaseHelper.colPhotoUrl],
+          localPhotoPath: contact?[DatabaseHelper.columnLocalPhotoPath],
+          // ✅ IYI NIYO FIX: Igarura content y'ubutumwa bwanyuma hatitawe ku wabwohereje
+          lastMessageContent: msg[DatabaseHelper.columnMessage] ?? "",
+          lastMessageTimestamp: msg[DatabaseHelper.columnTimestamp] ?? 0,
+          lastMessageType: msg[DatabaseHelper.columnMessageType],
+          lastMessageStatus: msg[DatabaseHelper.columnStatus],
+          lastMessageSenderId: sID,
+          unreadCount: unread,
+        ));
+      }
+      return recentChats;
+    } catch (e) { return []; }
+  }
+
+  // ---------------------------------------------------------------------------
+  // 2. CONTACTS TAB: Igarura abantu bose bari muri SQL bafite App (Saved Contacts)
+  // ---------------------------------------------------------------------------
   Future<List<ChatData>> getAllMatchedContacts(String currentUserId) async {
     try {
       final List<Map<String, dynamic>> maps = await _dbHelper.getJembeContacts();
+      
+      if (maps.isEmpty) return [];
+
       return maps.map((m) {
-        String localName = m['localContactName']?.toString() ?? "";
-        String firebaseName = m[DatabaseHelper.colDisplayName]?.toString() ?? "";
-        String phone = m[DatabaseHelper.colPhoneNumber] ?? "";
-        String uid = m[DatabaseHelper.colUserId] ?? "";
-        
-        // Priority Logic: Phonebook > Firebase > Phone
-        String finalName = "";
+        String uid = m[DatabaseHelper.colUserId]?.toString() ?? "";
+        String local = m[DatabaseHelper.colLocalContactName]?.toString() ?? "";
+        String fb = m[DatabaseHelper.colDisplayName]?.toString() ?? "";
+        String phone = m[DatabaseHelper.colPhoneNumber]?.toString() ?? "";
+
+        String finalName = "Jembe User";
         if (uid == 'jembe_talk_official_admin') {
           finalName = "Jembe Talk";
-        } else if (localName.trim().isNotEmpty) {
-          finalName = localName;
-        } else if (firebaseName.trim().isNotEmpty) {
-          finalName = firebaseName;
+        } else if (local.trim().isNotEmpty) {
+          finalName = local;
+        } else if (fb.trim().isNotEmpty) {
+          finalName = fb;
         } else {
           finalName = phone.isNotEmpty ? phone : "Jembe User";
         }
@@ -45,96 +122,17 @@ class ChatRepository {
           lastMessageTimestamp: 0
         );
       }).toList();
-    } catch (e) { 
-      log("Error getAllMatchedContacts: $e");
-      return []; 
-    }
+    } catch (e) { return []; }
   }
 
-  // ---------------------------------------------------------
-  // 2. RECENT CHATS (SOMA UBUTUMWA BWO KURI HOME)
-  // ---------------------------------------------------------
-  Future<List<ChatData>> getAllRecentChats(String currentUserId) async {
-    try {
-      // 1. Fata Room IDs zose zifite ubutumwa muri SQL
-      final List<String> roomIds = await _dbHelper.getChatRoomIdsSortedByLastMessage();
-      List<ChatData> recentChats = [];
-
-      for (String roomId in roomIds) {
-        // 2. Fata ubutumwa bwa nyuma muri iyi room
-        final lastMsg = await _dbHelper.getLastMessage(roomId);
-        if (lastMsg == null) continue; 
-        
-        // 3. Menya uwo muvugana (Other User ID)
-        String otherUserId = lastMsg[DatabaseHelper.columnSenderID] == currentUserId 
-            ? lastMsg[DatabaseHelper.columnReceiverID] 
-            : lastMsg[DatabaseHelper.columnSenderID];
-            
-        // 4. Shaka amakuru ye muri Contacts table ya SQL
-        final contactMap = await _dbHelper.getJembeContactById(otherUserId);
-        
-        // ✅ SMART DISPLAY NAME LOGIC: NO MORE UID LABELS ("Wko5...")
-        String displayName = ""; 
-
-        if (otherUserId == 'jembe_talk_official_admin') {
-          displayName = "Jembe Talk";
-        } else if (contactMap != null) {
-          String? local = contactMap['localContactName']?.toString();
-          String? fb = contactMap[DatabaseHelper.colDisplayName]?.toString();
-          String? phone = contactMap[DatabaseHelper.colPhoneNumber]?.toString();
-
-          // 1. Izina ryo muri telefone (Local)
-          if (local != null && local.trim().isNotEmpty) {
-            displayName = local;
-          } 
-          // 2. Izina ryo kuri Firebase (Urugero: "Ineza Odilo")
-          else if (fb != null && fb.trim().isNotEmpty) {
-            displayName = fb;
-          } 
-          // 3. Nimero ya telefone (Phone)
-          else if (phone != null && phone.trim().isNotEmpty) {
-            displayName = phone;
-          } else {
-            displayName = "Jembe User";
-          }
-        } else {
-          // Niba SyncService ikirimo gufetch izina, erekana gusa "Jembe User" by'agateganyo
-          displayName = "Jembe User";
-        }
-
-        // 5. Bara ubutumwa budasomye (Unread Count)
-        int unread = await _dbHelper.getUnreadMessagesCount(roomId, currentUserId);
-
-        recentChats.add(ChatData(
-          userId: otherUserId,
-          displayName: displayName,
-          photoUrl: contactMap?[DatabaseHelper.colPhotoUrl],
-          localPhotoPath: contactMap?[DatabaseHelper.columnLocalPhotoPath],
-          lastMessageContent: lastMsg[DatabaseHelper.columnMessage] ?? "",
-          lastMessageTimestamp: lastMsg[DatabaseHelper.columnTimestamp] ?? 0,
-          lastMessageType: lastMsg[DatabaseHelper.columnMessageType],
-          lastMessageStatus: lastMsg[DatabaseHelper.columnStatus],
-          lastMessageSenderId: lastMsg[DatabaseHelper.columnSenderID],
-          unreadCount: unread,
-        ));
-      }
-      
-      return recentChats;
-    } catch (e) { 
-      log("Error getAllRecentChats: $e");
-      return []; 
-    }
-  }
-
-  // ---------------------------------------------------------
-  // 3. ULTRA FAST SYNC LOGIC (Guhuza Terefone na Firebase)
-  // ---------------------------------------------------------
+  // ---------------------------------------------------------------------------
+  // 3. FULL SYNC: Gushaka abantu bose muri telefone bafite App (Saved Contacts)
+  // ---------------------------------------------------------------------------
   Future<void> warmUpMatchedContacts(Map<String, String> localContactsMap) async {
     try {
       final currentUser = FirebaseAuth.instance.currentUser;
       if (currentUser == null) return;
 
-      // 1. Menya igihugu nyir'uwayo arimo (Gufetch country code)
       final myDoc = await _firestore.collection('users').doc(currentUser.uid).get();
       String myFullPhone = myDoc.data()?['phoneNumber'] ?? "";
       
@@ -146,7 +144,6 @@ class ChatRepository {
         }
       } catch (_) {}
 
-      // 2. Tegura Map yo gushakisha vuba cyane
       Map<String, String> normalizedToOriginalName = {};
       List<String> searchList = [];
 
@@ -166,10 +163,9 @@ class ChatRepository {
         } catch (_) {}
       });
 
-      searchList = searchList.toSet().toList(); // Kuramo duplicates
+      searchList = searchList.toSet().toList();
       if (searchList.isEmpty) return;
 
-      // 3. PARALLEL FIRESTORE QUERIES (Inshuro 10 kuruta mbere)
       List<Future<QuerySnapshot<Map<String, dynamic>>>> futures = [];
       for (var i = 0; i < searchList.length; i += 30) {
         var end = (i + 30 < searchList.length) ? i + 30 : searchList.length;
@@ -185,19 +181,29 @@ class ChatRepository {
           var data = doc.data();
           data['id'] = doc.id;
           String fbPhone = (data['phoneNumber'] ?? "").toString().replaceAll(RegExp(r'\s+'), '');
-          data['localContactName'] = normalizedToOriginalName[fbPhone];
+          data[DatabaseHelper.colLocalContactName] = normalizedToOriginalName[fbPhone];
           firebaseMatches.add(data);
         }
       }
 
-      // 4. BATCH SAVE IN SQL (Ubu itandukaniro ni uko itasiba amazina ya Firebase)
       if (firebaseMatches.isNotEmpty) {
         await _dbHelper.saveJembeContactsInBatch(firebaseMatches);
       }
-
-      syncService.notifyUIMessageUpdate("sync_done");
       
-    } catch (e) { log("Ultra Sync Error: $e"); }
+      syncService.notifyUIMessageUpdate("refresh_ui");
+    } catch (e) { log("Sync Engine Error: $e"); }
+  }
+
+  Future<void> _triggerImmediateContactSync(String userId) async {
+    if (userId == 'jembe_talk_official_admin') return;
+    try {
+      final doc = await _firestore.collection('users').doc(userId).get();
+      if (doc.exists) {
+        final d = Map<String, dynamic>.from(doc.data()!)..['id'] = userId;
+        await _dbHelper.saveJembeContact(d);
+        syncService.notifyUIMessageUpdate("refresh_ui");
+      }
+    } catch (_) {}
   }
 
   Future<int> getLastMessageTimestamp() async {

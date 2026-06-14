@@ -1,8 +1,9 @@
-// lib/tabs/tv_tab.dart
+// lib/tabs/tv_tab.dart (VERSION 32.31 - GPU OPTIMIZED)
+
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-// --- PROJECT IMPORTS ---
+// Menya neza ko izina rya file ririmo player ari iri
 import 'package:jembe_talk/network_video_player.dart' as net_player;
 
 class TVTab extends StatefulWidget {
@@ -14,234 +15,274 @@ class TVTab extends StatefulWidget {
 
 class _TVTabState extends State<TVTab> with AutomaticKeepAliveClientMixin {
   @override
-  bool get wantKeepAlive => true; 
-  
+  bool get wantKeepAlive => true;
+
   bool _isTvOn = false;
+  Future<List<QueryDocumentSnapshot>>? _channelsFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadChannels();
+  }
+
+  void _loadChannels() {
+    // Gufata amakuru muri Firestore rimwe gusa (Static Fetch) kugira ngo itongera guhamagara internet buri gihe
+    _channelsFuture = FirebaseFirestore.instance
+        .collection('tv_channels')
+        .orderBy('order')
+        .get()
+        .then((snapshot) => snapshot.docs);
+  }
 
   @override
   Widget build(BuildContext context) {
-    super.build(context); 
+    super.build(context);
     final theme = Theme.of(context);
 
-    return Container(
-      width: double.infinity,
-      height: double.infinity,
-      // ✅ ISURA YAWE: Padding iguma uko wayishakaga (150-120) ariko tukanogeza gato
-      padding: const EdgeInsets.fromLTRB(15, 140, 15, 110),
-      child: Column(
-        children: [
-          // 1. ICANDIKO: JEMBE TV (Izina ryawe riraguma)
-          _buildHeader(theme),
-          
-          const SizedBox(height: 10),
-
-          // 2. TV Box Container (The Screen)
-          Expanded(
-            child: Container(
-              width: double.infinity,
-              decoration: BoxDecoration(
-                color: Colors.black,
-                borderRadius: BorderRadius.circular(30),
-                border: Border.all(
-                  // ✅ ISURA YAWE: Amabara y'ubururu n'umweru aguma uko yari ari
-                  color: _isTvOn ? Colors.blueAccent.withAlpha(100) : Colors.white10, 
-                  width: 2.0
-                ),
-                boxShadow: _isTvOn ? [
-                  BoxShadow(color: Colors.blueAccent.withAlpha(30), blurRadius: 20, spreadRadius: 5)
-                ] : [],
-              ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(28),
-                child: Stack(
-                  children: [
-                    Positioned.fill(
-                      child: _isTvOn ? _buildChannelList() : _buildOffScreen(),
-                    ),
-                    
-                    if (_isTvOn)
-                      IgnorePointer(
-                        child: Container(
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                              colors: [Colors.white.withAlpha(5), Colors.transparent, Colors.black.withAlpha(20)],
-                            ),
-                          ),
-                        ),
-                      ),
-
-                    // Power Button (Top Right)
-                    if (_isTvOn)
-                      Positioned(
-                        top: 15,
-                        right: 15,
-                        child: Material(
-                          color: Colors.transparent,
-                          child: InkWell(
-                            onTap: () => setState(() => _isTvOn = false),
-                            borderRadius: BorderRadius.circular(20),
-                            child: Container(
-                              padding: const EdgeInsets.all(8),
-                              decoration: BoxDecoration(
-                                color: Colors.black.withAlpha(150),
-                                shape: BoxShape.circle,
-                                border: Border.all(color: Colors.redAccent.withAlpha(100)),
-                              ),
-                              child: const Icon(Icons.power_settings_new, color: Colors.redAccent, size: 18),
-                            ),
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildHeader(ThemeData theme) {
-    return Column(
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      body: Container(
+        width: double.infinity,
+        height: double.infinity,
+        padding: const EdgeInsets.fromLTRB(15, 140, 15, 110),
+        child: Column(
           children: [
-            // ✅ ISURA YAWE: Icon ya sensors na JEMBE TV irasigara
-            const Icon(Icons.sensors_rounded, color: Colors.blueAccent, size: 18),
-            const SizedBox(width: 8),
-            Text(
-              "JEMBE TV",
-              style: TextStyle(
-                fontSize: 20, 
-                fontWeight: FontWeight.w900, 
-                letterSpacing: 2.0,
-                color: theme.textTheme.bodyLarge?.color,
-                shadows: const [Shadow(color: Colors.blueAccent, blurRadius: 8)],
+            // 1. Header (Isolate repaint)
+            const RepaintBoundary(child: _TVHeader()),
+            const SizedBox(height: 12),
+
+            // 2. TV Screen Area
+            Expanded(
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 300),
+                width: double.infinity,
+                decoration: BoxDecoration(
+                  color: Colors.black,
+                  borderRadius: BorderRadius.circular(30),
+                  border: Border.all(
+                    color: _isTvOn
+                        ? Colors.blueAccent.withOpacity(0.4)
+                        : Colors.white10,
+                    width: 1.5,
+                  ),
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(28),
+                  child: Stack(
+                    children: [
+                      Positioned.fill(
+                        child: AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 250),
+                          child:
+                              _isTvOn ? _buildChannelList() : _buildOffScreen(),
+                        ),
+                      ),
+                      if (_isTvOn)
+                        Positioned(
+                          top: 15,
+                          right: 15,
+                          child: RepaintBoundary(
+                            child: IconButton(
+                              onPressed: () => setState(() => _isTvOn = false),
+                              icon: const Icon(Icons.power_settings_new,
+                                  color: Colors.redAccent, size: 22),
+                              style: IconButton.styleFrom(
+                                  backgroundColor: Colors.black54),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
               ),
             ),
           ],
         ),
-        const SizedBox(height: 4),
-        Container(
-          width: 40,
-          height: 3,
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(colors: [Colors.blueAccent, Colors.redAccent]),
-            borderRadius: BorderRadius.circular(2),
-          ),
-        ),
-      ],
+      ),
     );
   }
 
   Widget _buildOffScreen() {
     return Column(
+      key: const ValueKey("off_screen"),
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
         GestureDetector(
           onTap: () => setState(() => _isTvOn = true),
           child: Container(
-            width: 100,
-            height: 100,
+            width: 90,
+            height: 90,
             decoration: BoxDecoration(
-              color: Colors.black.withAlpha(50),
               shape: BoxShape.circle,
-              border: Border.all(color: Colors.redAccent.withAlpha(80), width: 2),
-              boxShadow: const [
-                BoxShadow(color: Colors.redAccent, blurRadius: 25, spreadRadius: -5),
-              ],
+              border: Border.all(
+                  color: Colors.redAccent.withOpacity(0.3), width: 2),
             ),
-            // ✅ ISURA YAWE: Power Icon itukura iraguma
-            child: const Icon(Icons.power_settings_new, color: Colors.redAccent, size: 50),
+            child: const Icon(Icons.power_settings_new,
+                color: Colors.redAccent, size: 45),
           ),
         ),
         const SizedBox(height: 20),
         const Text(
           "OPEN TV",
-          style: TextStyle(color: Colors.white54, fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 2.5),
+          style: TextStyle(
+              color: Colors.white38,
+              fontSize: 13,
+              fontWeight: FontWeight.bold,
+              letterSpacing: 2.0),
         ),
       ],
     );
   }
 
   Widget _buildChannelList() {
-    return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance.collection('tv_channels').orderBy('order').snapshots(),
+    return FutureBuilder<List<QueryDocumentSnapshot>>(
+      key: const ValueKey("channel_list"),
+      future: _channelsFuture,
       builder: (context, snapshot) {
-        if (snapshot.hasError) return const Center(child: Text("Error!"));
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator(color: Colors.blueAccent));
+          return const Center(
+              child: CircularProgressIndicator(
+                  color: Colors.blueAccent, strokeWidth: 2));
         }
-        
-        final channels = snapshot.data!.docs;
-        if (channels.isEmpty) return const Center(child: Text("Nta makuru ahari ubu.", style: TextStyle(color: Colors.white54)));
+
+        if (snapshot.hasError || !snapshot.hasData) {
+          return const Center(
+              child: Text("Error loading channels",
+                  style: TextStyle(color: Colors.white54)));
+        }
+
+        final channels = snapshot.data!;
 
         return ListView.builder(
-          padding: const EdgeInsets.fromLTRB(12, 60, 12, 20),
+          padding: const EdgeInsets.fromLTRB(12, 65, 12, 30),
           itemCount: channels.length,
+          physics: const BouncingScrollPhysics(),
+          // KOSORA: Kurinda lag binyuze muri optimization ya channel list
+          addAutomaticKeepAlives: true,
+          addRepaintBoundaries: true,
           itemBuilder: (context, index) {
-            final ch = channels[index].data() as Map<String, dynamic>;
-            return _buildChannelCard(channels[index].id, ch, index + 1);
+            final chData = channels[index].data() as Map<String, dynamic>;
+            final String channelId = channels[index].id;
+
+            return RepaintBoundary(
+              // KOSORA: Isolate buri card repaint
+              child: _ChannelCard(
+                channelId: channelId,
+                data: chData,
+                number: index + 1,
+              ),
+            );
           },
         );
       },
     );
   }
+}
 
-  Widget _buildChannelCard(String channelId, Map<String, dynamic> ch, int channelNumber) {
-    String channelName = ch['name'] ?? 'Jembe TV';
+class _TVHeader extends StatelessWidget {
+  const _TVHeader();
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.sensors_rounded,
+                color: Colors.blueAccent, size: 20),
+            const SizedBox(width: 8),
+            Text(
+              "JEMBE TV",
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 2.0,
+                color: Theme.of(context).textTheme.bodyLarge?.color,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        Container(
+          width: 50,
+          height: 3,
+          decoration: BoxDecoration(
+              color: Colors.blueAccent, borderRadius: BorderRadius.circular(2)),
+        ),
+      ],
+    );
+  }
+}
+
+class _ChannelCard extends StatelessWidget {
+  final String channelId;
+  final Map<String, dynamic> data;
+  final int number;
+
+  const _ChannelCard(
+      {required this.channelId, required this.data, required this.number});
+
+  @override
+  Widget build(BuildContext context) {
+    final String name = data['name'] ?? 'Jembe TV';
+
     return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.only(bottom: 10),
       child: Material(
         color: Colors.transparent,
         child: InkWell(
           borderRadius: BorderRadius.circular(15),
           onTap: () {
-            Navigator.push(context, MaterialPageRoute(builder: (c) => net_player.NetworkVideoPlayerScreen(
-              channelId: channelId, streamUrl: ch['streamUrl'] ?? '', videoId: ch['videoId'] ?? '',
-              title: "$channelNumber. $channelName", type: ch['type'] ?? 'youtube',
-            )));
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (c) => net_player.NetworkVideoPlayerScreen(
+                  channelId: channelId,
+                  streamUrl: data['streamUrl'] ?? '',
+                  videoId: data['videoId'] ?? '',
+                  title: "$number. $name",
+                  type: data['type'] ?? 'tv',
+                ),
+              ),
+            );
           },
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
             decoration: BoxDecoration(
-                color: const Color(0xFF1E1E26), 
-                borderRadius: BorderRadius.circular(18), 
-                border: Border.all(color: Colors.white.withAlpha(20))
+              color: const Color(0xFF1A1A20),
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: Colors.white12),
             ),
             child: Row(
               children: [
                 Container(
-                  width: 38, height: 38, alignment: Alignment.center,
+                  width: 36,
+                  height: 36,
+                  alignment: Alignment.center,
                   decoration: BoxDecoration(
-                      color: Colors.blueAccent.withAlpha(40), 
-                      borderRadius: BorderRadius.circular(10), 
-                      border: Border.all(color: Colors.blueAccent.withAlpha(100))
+                    color: Colors.blueAccent.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(10),
                   ),
-                  child: Text("$channelNumber", style: const TextStyle(color: Colors.blueAccent, fontSize: 16, fontWeight: FontWeight.w900)),
+                  child: Text("$number",
+                      style: const TextStyle(
+                          color: Colors.blueAccent,
+                          fontWeight: FontWeight.bold)),
                 ),
                 const SizedBox(width: 15),
                 Expanded(
-                  child: FittedBox(
-                    fit: BoxFit.scaleDown, alignment: Alignment.centerLeft,
-                    child: Text(channelName, style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+                  child: Text(
+                    name,
+                    style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
-                const SizedBox(width: 8),
-                // ✅ KOSORA: Aho gukoresha "LIVE", nshyizemo "OFFICIAL"
-                // Izina "OFFICIAL" ririnda ko Google iguhata ibibazo, kandi rirasa neza mu mwinjiriro wawe
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(
-                      color: Colors.blueAccent, // Nakomeje ibara ry'ubururu kugira ngo ihuze na JEMBE TV
-                      borderRadius: BorderRadius.circular(4)
-                  ),
-                  child: const Text("OFFICIAL", style: TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.w900)),
-                ),
+                const Icon(Icons.play_circle_fill,
+                    color: Colors.white24, size: 24),
               ],
             ),
           ),

@@ -21,7 +21,8 @@ class PostTranslations {
       'delete_post': 'Futa post',
       'edit_post_text': 'Guhindura amajambo',
       'delete_confirm_title': 'Gufuta Post?',
-      'delete_confirm_body': 'Vyukuri ushaka gufuta iyi post burundu? Ntabwo isubira kuboneka.',
+      'delete_confirm_body':
+          'Vyukuri ushaka gufuta iyi post burundu? Ntabwo isubira kuboneka.',
       'cancel': 'Reka',
       'confirm': 'Emeza',
       'rendering_video': 'Gutunganya video...',
@@ -60,33 +61,37 @@ class PostTranslations {
       'report_failed': 'Ikirego vyanse.',
       'saving_status': 'BIRIKO BIRABIKWA...',
       'unfriend_confirm_title': 'Gukura mu bagenzi?',
-'unfriend_confirm_body': 'Vyukuri ushaka gukura uyu muntu mu bagenzi bawe? Ntabwo muzaba mugishobora kwandikirana.',
-'unfriend_confirm_button': 'Mukuremo',
-     // Repport
+      'unfriend_confirm_body':
+          'Vyukuri ushaka gukura uyu muntu mu bagenzi bawe? Ntabwo muzoba mugishobora kwandikirana.',
+      'unfriend_confirm_button': 'Mukuremwo',
+      // Repport
 // Muri 'ki':
-'report_post_title': 'Kurega iyi Post?',
-'report_post_msg': 'Rega iyi post nimba itubahiriza amategeko?',
-'report_success_msg': 'Ikirego cakiriwe. Reka dusuzume.',
+      'report_post_title': 'Kurega iyi Post?',
+      'report_post_msg': 'Rega iyi post nimba itubahiriza amategeko?',
+      'report_success_msg': 'Ikirego cakiriwe. Reka dusuzume.',
 
 // Muri 'sw':
-'report_post_title': 'Ripoti Posti hii?',
-'report_post_msg': 'Je, unathibitisha unataka kuripoti posti hii kwa kukiuka sheria?',
-'report_success_msg': 'Ripoti imepokelewa. Tutafuatilia.',
+      'report_post_title': 'Ripoti Posti hii?',
+      'report_post_msg':
+          'Je, unathibitisha unataka kuripoti posti hii kwa kukiuka sheria?',
+      'report_success_msg': 'Ripoti imepokelewa. Tutafuatilia.',
 
 // Muri 'en':
-'report_post_title': 'Report this Post?',
-'report_post_msg': 'Are you sure you want to report this post for violating rules?',
-'report_success_msg': 'Report received. We will investigate.',
+      'report_post_title': 'Report this Post?',
+      'report_post_msg':
+          'Are you sure you want to report this post for violating rules?',
+      'report_success_msg': 'Report received. We will investigate.',
 
 // Muri 'fr':
-'report_post_title': 'Signaler ce Post ?',
-'report_post_msg': 'Voulez-vous vraiment signaler ce post pour violation des règles ?',
-'report_success_msg': 'Signalement reçu. Nous allons enquêter.',
+      'report_post_title': 'Signaler ce Post ?',
+      'report_post_msg':
+          'z-vous vraiment signaler ce post pour violation des règles Voule?',
+      'report_success_msg': 'Signalement reçu. Nous allons enquêter.',
 
       // PROFILE & COMMENTS
       'profile_title': 'Umwirondoro',
       'profile_no_posts': 'Nta makuru arashirwako.',
-      'profile_no_comments': 'Nta gitekerezo kirashirwako.',
+      'profile_no_comments': 'Nta ciyumviro kirashirwako.',
       'profile_posts_stat': 'Ibicapo',
       'profile_likes_stat': 'Ukugundwa',
       'profile_friend_request_button': 'Saba ubucuti',
@@ -118,7 +123,8 @@ class PostTranslations {
       'delete_post': 'Futa chapisho',
       'edit_post_text': 'Hariri maandishi',
       'delete_confirm_title': 'Futa Chapisho?',
-      'delete_confirm_body': 'Je, una uhakika unataka kufuta chapisho hili kabisa? Huwezi kuirejesha.',
+      'delete_confirm_body':
+          'Je, una uhakika unataka kufuta chapisho hili kabisa? Huwezi kuirejesha.',
       'cancel': 'Acha',
       'confirm': 'Kubali',
       'rendering_video': 'Inatayarisha video...',
@@ -148,7 +154,8 @@ class PostTranslations {
       'cat_Entertainment': 'Burudani',
       'cat_Tech': 'Teknolojia',
       'cat_Lifestyle': 'Maisha',
-      'no_posts_found': 'Hakuna machapisho yaliyopatikana. Angalia mtandao wako.',
+      'no_posts_found':
+          'Hakuna machapisho yaliyopatikana. Angalia mtandao wako.',
       'retry_button': 'JARIBU TENA',
       'download_started': 'Upakuaji umeanza...',
       'download_finished': 'Upakuaji umekamilika! Imehifadhiwa kwenye Galari.',
@@ -157,8 +164,9 @@ class PostTranslations {
       'report_failed': 'Ripoti imefeli.',
       'saving_status': 'INAHIFADHI...',
       'unfriend_confirm_title': 'Ondoa Urafiki?',
-'unfriend_confirm_body': 'Je, una uhakika unataka kumwondoa mtu huyu kwenye orodha ya marafiki zako? Hamtaweza kutumiana ujumbe tena.',
-'unfriend_confirm_button': 'Ondoa',
+      'unfriend_confirm_body':
+          'Je, una uhakika unataka kumwondoa mtu huyu kwenye orodha ya marafiki zako? Hamtaweza kutumiana ujumbe tena.',
+      'unfriend_confirm_button': 'Ondoa',
 
       // PROFILE & COMMENTS
       'profile_title': 'Wasifu',
@@ -195,7 +203,8 @@ class PostTranslations {
       'delete_post': 'Delete post',
       'edit_post_text': 'Edit text',
       'delete_confirm_title': 'Delete Post?',
-      'delete_confirm_body': 'Are you sure you want to delete this post permanently? This cannot be undone.',
+      'delete_confirm_body':
+          'Are you sure you want to delete this post permanently? This cannot be undone.',
       'cancel': 'Cancel',
       'confirm': 'Confirm',
       'rendering_video': 'Rendering video...',
@@ -233,9 +242,10 @@ class PostTranslations {
       'report_received': 'Report received.',
       'report_failed': 'Report failed.',
       'saving_status': 'SAVING...',
-'unfriend_confirm_title': 'Unfriend?',
-'unfriend_confirm_body': 'Are you sure you want to remove this person from your friends list? You will no longer be able to message each other.',
-'unfriend_confirm_button': 'Unfriend',
+      'unfriend_confirm_title': 'Unfriend?',
+      'unfriend_confirm_body':
+          'Are you sure you want to remove this person from your friends list? You will no longer be able to message each other.',
+      'unfriend_confirm_button': 'Unfriend',
       // PROFILE & COMMENTS
       'profile_title': 'Profile',
       'profile_no_posts': 'No posts yet.',
@@ -271,7 +281,8 @@ class PostTranslations {
       'delete_post': 'Supprimer le post',
       'edit_post_text': 'Modifier le texte',
       'delete_confirm_title': 'Supprimer le post ?',
-      'delete_confirm_body': 'Êtes-vous sûr de vouloir supprimer ce post ? Cette action est irréversible.',
+      'delete_confirm_body':
+          'Êtes-vous sûr de vouloir supprimer ce post ? Cette action est irréversible.',
       'cancel': 'Annuler',
       'confirm': 'Confirmer',
       'rendering_video': 'Traitement vidéo...',
@@ -304,7 +315,8 @@ class PostTranslations {
       'no_posts_found': 'Aucun post trouvé. Veuillez vérifier votre connexion.',
       'retry_button': 'RÉESSAYER',
       'download_started': 'Téléchargement démarré...',
-      'download_finished': 'Téléchargement terminé ! Enregistré dans la galerie.',
+      'download_finished':
+          'Téléchargement terminé ! Enregistré dans la galerie.',
       'download_failed': 'Échec du téléchargement.',
       'report_received': 'Signalement reçu.',
       'report_failed': 'Échec du signalement.',
@@ -326,13 +338,14 @@ class PostTranslations {
       'delete_comment_cancel': 'Annuler',
       'delete_comment_confirm': 'Supprimer',
       'unfriend_confirm_title': 'Retirer des amis ?',
-'unfriend_confirm_body': 'Voulez-vous vraiment retirer cette personne de votre liste d\'amis ? Vous ne pourrez plus vous envoyer de messages.',
-'unfriend_confirm_button': 'Retirer',
+      'unfriend_confirm_body':
+          'Voulez-vous vraiment retirer cette personne de votre liste d\'amis ? Vous ne pourrez plus vous envoyer de messages.',
+      'unfriend_confirm_button': 'Retirer',
     },
   };
 
   static String t(String key, String langCode) {
-    if (!translations.containsKey(langCode)) langCode = 'en'; 
-    return translations[langCode]?[key] ?? key; 
+    if (!translations.containsKey(langCode)) langCode = 'en';
+    return translations[langCode]?[key] ?? key;
   }
 }

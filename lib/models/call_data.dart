@@ -1,4 +1,4 @@
-// lib/models/call_data.dart (YAKOSOWE NEZA)
+// lib/models/call_data.dart
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:jembe_talk/services/database_helper.dart';
@@ -57,7 +57,7 @@ class CallData {
   }
 
   // ==================================================================
-  // <<<--- IKI GIKORWA CYA 'toMap' NI CYO TWONGEREYEMO ---<<<
+  // <<<---  NZOKWIBUKE IBIJANYE NA CALL---<<<
   // ==================================================================
   Map<String, dynamic> toMap() {
     return {

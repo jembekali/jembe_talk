@@ -16,6 +16,15 @@ class WelcomeScreen extends StatefulWidget {
 class _WelcomeScreenState extends State<WelcomeScreen> {
   bool _isLanguageMenuOpen = false;
 
+  // Iyi function niyo ifunga menu
+  void _closeLanguageMenu() {
+    if (_isLanguageMenuOpen) {
+      setState(() {
+        _isLanguageMenuOpen = false;
+      });
+    }
+  }
+
   void _toggleLanguageMenu() {
     setState(() {
       _isLanguageMenuOpen = !_isLanguageMenuOpen;
@@ -31,11 +40,11 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
 
   String _getLanguageName(String code) {
     switch (code) {
+      case 'en': return 'English';
       case 'ki': return 'Ikirundi';
       case 'sw': return 'Kiswahili';
-      case 'en': return 'English';
       case 'fr': return 'Français';
-      default: return 'Ikirundi';
+      default: return 'English';
     }
   }
 
@@ -44,154 +53,180 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
     final lang = Provider.of<LanguageProvider>(context);
     final String c = lang.currentLanguage;
 
-    return Scaffold(
-      backgroundColor: const Color.fromARGB(255, 28, 41, 53),
-      body: SafeArea(
-        child: Stack(
-          children: [
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 10.0),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: <Widget>[
-                  const SizedBox(height: 50), 
-                  Expanded(
-                    flex: 3,
-                    child: Center(
-                      child: Image.asset('assets/images/welcome_logo.png', height: 250.0),
-                    ),
-                  ),
-                  Expanded(
-                    flex: 4, 
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.end,
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(16.0),
-                          decoration: BoxDecoration(
-                            color: Colors.black.withOpacity(0.25), 
-                            borderRadius: BorderRadius.circular(15.0),
-                            border: Border.all(color: Colors.white.withOpacity(0.1)),
-                          ),
-                          child: Column(
-                            children: [
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  const Icon(Icons.info_outline, color: Colors.white, size: 20),
-                                  const SizedBox(width: 8),
-                                  Text(
-                                    AppTranslations.translate(c, 'terms_title'),
-                                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 8),
-                              Text(
-                                AppTranslations.translate(c, 'welcome_terms'), 
-                                textAlign: TextAlign.center,
-                                style: const TextStyle(color: Colors.white, fontSize: 13.0, height: 1.4),
-                              ),
-                              TextButton(
-                                onPressed: _launchURL,
-                                child: Text(
-                                  AppTranslations.translate(c, 'read_more'),
-                                  style: const TextStyle(color: Colors.tealAccent, fontWeight: FontWeight.bold, decoration: TextDecoration.underline),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 25.0),
-                        ElevatedButton(
-                          onPressed: () {
-                            Navigator.push(
-                              context,
-                              PageTransition(
-                                type: PageTransitionType.rightToLeftWithFade,
-                                child: const PhoneAuthScreen(),
-                                duration: const Duration(milliseconds: 1000),
-                                curve: Curves.easeInOut,
-                                isIos: true,
-                              ),
-                            );
-                          },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.white,
-                            foregroundColor: const Color.fromARGB(255, 21, 29, 65),
-                            minimumSize: const Size.fromHeight(55),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30.0)),
-                            elevation: 5.0,
-                          ),
-                          child: Text(
-                            AppTranslations.translate(c, 'login_phone_btn'),
-                            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                          ),
-                        ),
-                        const SizedBox(height: 15.0),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            
-            Positioned(
-              top: 10, right: 24,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  GestureDetector(
-                    onTap: _toggleLanguageMenu,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.2),
-                        borderRadius: BorderRadius.circular(25),
-                        border: Border.all(color: Colors.white.withOpacity(0.3)),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(Icons.language, color: Colors.white, size: 20),
-                          const SizedBox(width: 8),
-                          Text(_getLanguageName(lang.currentLanguage), style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                          const SizedBox(width: 4),
-                          AnimatedRotation(
-                            turns: _isLanguageMenuOpen ? 0.5 : 0, 
-                            duration: const Duration(milliseconds: 300),
-                            child: const Icon(Icons.keyboard_arrow_down, color: Colors.white, size: 20),
-                          ),
-                        ],
+    return GestureDetector(
+      // Ibi bituma iyo ukanze ahandi hantu hose menu yifunga
+      onTap: _closeLanguageMenu,
+      behavior: HitTestBehavior.opaque, 
+      child: Scaffold(
+        backgroundColor: const Color.fromARGB(255, 28, 41, 53),
+        body: SafeArea(
+          child: Stack(
+            children: [
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 10.0),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    const SizedBox(height: 70), 
+                    Expanded(
+                      flex: 3,
+                      child: Center(
+                        child: Image.asset('assets/images/welcome_logo.png', height: 250.0),
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 5),
-                  AnimatedContainer(
-                    duration: const Duration(milliseconds: 400),
-                    curve: Curves.fastOutSlowIn,
-                    height: _isLanguageMenuOpen ? 180 : 0, 
-                    width: 150,
-                    decoration: BoxDecoration(color: const Color.fromARGB(255, 20, 24, 75), borderRadius: BorderRadius.circular(15)),
-                    clipBehavior: Clip.hardEdge, 
-                    child: SingleChildScrollView(
-                      physics: const NeverScrollableScrollPhysics(),
+                    Expanded(
+                      flex: 4, 
                       child: Column(
+                        mainAxisAlignment: MainAxisAlignment.end,
                         children: [
-                          // IKIRUNDI NI CYO KIZA MBERE
-                          _buildLangItem(context, lang, 'ki', 'Ikirundi'),
-                          _buildLangItem(context, lang, 'sw', 'Kiswahili'),
-                          _buildLangItem(context, lang, 'en', 'English'),
-                          _buildLangItem(context, lang, 'fr', 'Français'),
+                          Container(
+                            padding: const EdgeInsets.all(16.0),
+                            decoration: BoxDecoration(
+                              color: Colors.black.withOpacity(0.25), 
+                              borderRadius: BorderRadius.circular(15.0),
+                              border: Border.all(color: Colors.white.withOpacity(0.1)),
+                            ),
+                            child: Column(
+                              children: [
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    const Icon(Icons.info_outline, color: Colors.white, size: 20),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      AppTranslations.translate(c, 'terms_title'),
+                                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  AppTranslations.translate(c, 'welcome_terms'), 
+                                  textAlign: TextAlign.center,
+                                  style: const TextStyle(color: Colors.white, fontSize: 13.0, height: 1.4),
+                                ),
+                                TextButton(
+                                  onPressed: _launchURL,
+                                  child: Text(
+                                    AppTranslations.translate(c, 'read_more'),
+                                    style: const TextStyle(color: Colors.tealAccent, fontWeight: FontWeight.bold, decoration: TextDecoration.underline),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 25.0),
+
+                          // Button yo kwinjira (Inanutse nka ya yindi)
+                          ElevatedButton(
+                            onPressed: () {
+                              _closeLanguageMenu(); // Funga menu niba yari ifunguye
+                              Navigator.push(
+                                context,
+                                PageTransition(
+                                  type: PageTransitionType.rightToLeftWithFade,
+                                  child: const PhoneAuthScreen(),
+                                  duration: const Duration(milliseconds: 1000),
+                                  curve: Curves.easeInOut,
+                                  isIos: true,
+                                ),
+                              );
+                            },
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.white.withOpacity(0.1),
+                              foregroundColor: Colors.white,
+                              minimumSize: const Size.fromHeight(45), 
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8.0), 
+                                side: BorderSide(color: Colors.white.withOpacity(0.4), width: 1),
+                              ),
+                              elevation: 0,
+                            ),
+                            child: Text(
+                              AppTranslations.translate(c, 'login_phone_btn'),
+                              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+                            ),
+                          ),
+                          const SizedBox(height: 20.0),
                         ],
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-          ],
+              
+              // KADIRISHA K'URURIMI
+              Positioned(
+                top: 20,
+                right: 24,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    GestureDetector(
+                      onTap: _toggleLanguageMenu,
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 300),
+                        width: 220, 
+                        height: 40,  
+                        padding: const EdgeInsets.symmetric(horizontal: 15),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(8), 
+                          border: Border.all(
+                            color: _isLanguageMenuOpen ? Colors.tealAccent : Colors.white.withOpacity(0.3),
+                            width: 1,
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Row(
+                              children: [
+                                const Icon(Icons.language, color: Colors.white, size: 18),
+                                const SizedBox(width: 10),
+                                Text(
+                                  _getLanguageName(lang.currentLanguage),
+                                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w500, fontSize: 15),
+                                ),
+                              ],
+                            ),
+                            Icon(
+                              _isLanguageMenuOpen ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
+                              color: Colors.white,
+                              size: 20,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 5),
+                    if (_isLanguageMenuOpen)
+                      AnimatedContainer(
+                        duration: const Duration(milliseconds: 300),
+                        width: 220,
+                        decoration: BoxDecoration(
+                          color: const Color.fromARGB(255, 20, 24, 75),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.white.withOpacity(0.1)),
+                          boxShadow: [
+                            BoxShadow(color: Colors.black.withOpacity(0.3), blurRadius: 10)
+                          ],
+                        ),
+                        child: Column(
+                          children: [
+                            _buildLangItem(context, lang, 'en', 'English'),
+                            _buildLangItem(context, lang, 'ki', 'Ikirundi'),
+                            _buildLangItem(context, lang, 'sw', 'Kiswahili'),
+                            _buildLangItem(context, lang, 'fr', 'Français'),
+                          ],
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -206,13 +241,21 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
       },
       child: Container(
         width: double.infinity,
-        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-        color: isSelected ? Colors.white.withOpacity(0.1) : Colors.transparent,
+        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 15),
+        decoration: BoxDecoration(
+          color: isSelected ? Colors.white.withOpacity(0.1) : Colors.transparent,
+        ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text(name, style: TextStyle(color: Colors.white, fontWeight: isSelected ? FontWeight.bold : FontWeight.normal)),
-            if (isSelected) const Icon(Icons.check, color: Colors.white, size: 16),
+            Text(
+              name,
+              style: TextStyle(
+                color: isSelected ? Colors.tealAccent : Colors.white,
+                fontSize: 14,
+              ),
+            ),
+            if (isSelected) const Icon(Icons.check, color: Colors.tealAccent, size: 16),
           ],
         ),
       ),

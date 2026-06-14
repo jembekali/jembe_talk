@@ -2,14 +2,30 @@
 
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'post_card.dart'; // Ubu iyi dosiye ibayeho!
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:jembe_talk/services/database_helper.dart';
+import 'package:jembe_talk/tangaza_star/comment_screen.dart';
+import 'post_card.dart';
 
-class MyPostViewScreen extends StatelessWidget {
+class MyPostViewScreen extends StatefulWidget {
   final DocumentSnapshot post;
-
   const MyPostViewScreen({super.key, required this.post});
 
-  Future<void> _deletePost(BuildContext context) async {
+  @override
+  State<MyPostViewScreen> createState() => _MyPostViewScreenState();
+}
+
+class _MyPostViewScreenState extends State<MyPostViewScreen> {
+  final ValueNotifier<bool> _isScreenActive = ValueNotifier(true);
+  final String? _currentUserId = FirebaseAuth.instance.currentUser?.uid;
+
+  @override
+  void dispose() {
+    _isScreenActive.dispose();
+    super.dispose();
+  }
+
+  Future<void> _deletePost() async {
     final bool? confirm = await showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -27,54 +43,69 @@ class MyPostViewScreen extends StatelessWidget {
     );
 
     if (confirm == true) {
-      await FirebaseFirestore.instance.collection('tangaza_posts').doc(post.id).delete();
-      if (context.mounted) {
-        Navigator.of(context).pop();
-      }
+      await FirebaseFirestore.instance.collection('tangaza_posts').doc(widget.post.id).delete();
+      if (mounted) Navigator.of(context).pop();
     }
-  }
-
-  void _editPost(BuildContext context) {
-    // Iyi code izakoreshwa hanyuma
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Igice co guhindura post kizoza hanyuma.'))
-    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final postData = post.data() as Map<String, dynamic>;
+    final data = widget.post.data() as Map<String, dynamic>;
+    
+    // Tugira data Map ihuye n'ibyo DatabaseHelper (PostCard) yiteze
+    final Map<String, dynamic> postMap = {
+      DatabaseHelper.colPostId: widget.post.id,
+      DatabaseHelper.colUserName: data['userName'] ?? 'Star',
+      DatabaseHelper.colUserImageUrl: data['userImageUrl'],
+      DatabaseHelper.colText: data['text'] ?? '',
+      DatabaseHelper.colTitle: data['title'] ?? '',
+      DatabaseHelper.colImageUrl: data['imageUrl'],
+      DatabaseHelper.colVideoUrl: data['videoUrl'],
+      DatabaseHelper.colLikes: data['likes'] ?? 0,
+      DatabaseHelper.colCommentsCount: data['comments'] ?? 0,
+      DatabaseHelper.colViews: data['views'] ?? 0,
+      DatabaseHelper.colCategory: data['category'] ?? 'General',
+      DatabaseHelper.colIsLikedByMe: (data['likedBy'] as List? ?? []).contains(_currentUserId) ? 1 : 0,
+    };
 
     return Scaffold(
+      backgroundColor: Colors.black,
       appBar: AppBar(
         title: const Text('Ijambo Ryanje'),
-        backgroundColor: Colors.white,
-        foregroundColor: Colors.black,
-        elevation: 0.5,
-        iconTheme: const IconThemeData(color: Colors.black),
+        backgroundColor: Colors.black,
+        foregroundColor: Colors.white,
         actions: [
           IconButton(
-            icon: const Icon(Icons.edit_note, color: Colors.blue),
-            onPressed: () => _editPost(context),
-          ),
-          IconButton(
-            icon: const Icon(Icons.delete_outline, color: Colors.red),
-            onPressed: () => _deletePost(context),
+            icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
+            onPressed: _deletePost,
           ),
         ],
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(8.0),
-        child: PostCard(
-          postId: post.id,
-          userName: postData['userName'] ?? 'Ata zina',
-          userImageUrl: postData['userImageUrl'] ?? '', 
-          postText: postData['text'] ?? '', 
-          imageUrl: postData['imageUrl'] as String?,
-          likes: postData['likes'] ?? 0,
-          likedBy: List.from(postData['likedBy'] ?? []),
-          comments: postData['comments'] ?? 0,
-          views: postData['views'] ?? 0,
+      body: SingleChildScrollView(
+        child: Padding(
+          padding: const EdgeInsets.all(8.0),
+          child: PostCard(
+            post: postMap,
+            currentUserId: _currentUserId,
+            isScreenActive: _isScreenActive,
+            // Twandika utubuto (Functions) kuko ari "Required" muri PostCard
+            onLike: (p) async {
+              // Hano ushobora gushyiramo logic yo gu-liking niba ubishaka
+            },
+            onOpenComments: (p) {
+              Navigator.push(context, MaterialPageRoute(
+                builder: (context) => CommentScreen(postData: p),
+              ));
+            },
+            onShowOptions: (p) {
+              // Show options niba ari ngombwa
+            },
+            onShowFullNews: (ctx, title, body, lang) {
+              // Show full news logic
+            },
+            onShareStart: () {},
+            onShareEnd: (success) {},
+          ),
         ),
       ),
     );

@@ -1,3 +1,5 @@
+// lib/tangaza_star/star_post_detail_screen.dart
+
 import 'dart:async';
 import 'dart:ui';
 import 'package:flutter/material.dart';
@@ -30,7 +32,7 @@ class _StarPostDetailScreenState extends State<StarPostDetailScreen> with Single
   bool _isInitialized = false;
   bool _isViewCounted = false;
   Timer? _viewTimer;
-  bool _isVideo = false; // Tegeko rishya: Menya niba ari video cyangwa ifoto
+  bool _isVideo = false; 
   
   bool _showCenterIcon = false;
   IconData _playPauseIcon = Icons.play_arrow_rounded;
@@ -42,14 +44,12 @@ class _StarPostDetailScreenState extends State<StarPostDetailScreen> with Single
     WidgetsBinding.instance.addObserver(this); 
     _tickerController = AnimationController(vsync: this, duration: const Duration(seconds: 25))..repeat();
     
-    // Menya niba ari video cyangwa ifoto mbere yo gutangira
     final String? videoUrl = widget.postData['videoUrl'] ?? widget.postData['video_url'] ?? widget.postData['networkVideoUrl'];
     _isVideo = videoUrl != null && videoUrl.isNotEmpty;
 
     if (_isVideo) {
-      WidgetsBinding.instance.addPostFrameCallback((_) => _setupVideo());
+      _setupVideo(); // 🔥 NON-BLOCKING INIT
     } else {
-      // Niba ari ifoto, tugaragaze ko "Initialized" kugira ngo UI yifungure
       _isInitialized = true; 
     }
     _startViewTimer();
@@ -72,7 +72,7 @@ class _StarPostDetailScreenState extends State<StarPostDetailScreen> with Single
 
   void _startViewTimer() {
     if (_isViewCounted) return;
-    _viewTimer = Timer(const Duration(seconds: 3), () {
+    _viewTimer = Timer(const Duration(seconds: 5), () {
       if (mounted && !_isViewCounted) {
         _isViewCounted = true;
         context.read<FeedManager>().markPostAsViewed(widget.postData[DatabaseHelper.colPostId] ?? widget.postData['id']);
@@ -80,7 +80,8 @@ class _StarPostDetailScreenState extends State<StarPostDetailScreen> with Single
     });
   }
 
-  Future<void> _setupVideo() async {
+  // 🔥 FIKISIYE: Non-blocking video setup nka TikTok
+  void _setupVideo() {
     final String? rawVideoUrl = widget.postData['videoUrl'] ?? widget.postData['video_url'] ?? widget.postData['networkVideoUrl'];
     if (rawVideoUrl == null || rawVideoUrl.isEmpty) return;
 
@@ -95,17 +96,15 @@ class _StarPostDetailScreenState extends State<StarPostDetailScreen> with Single
       httpHeaders: {'X-Jembe-Auth': R2Service.workerSecretKey},
     );
 
-    try {
-      await _videoController!.initialize();
+    // 🔥 ANTI-FREEZE: Ireke yikine muri background
+    _videoController!.initialize().then((_) {
       if (mounted) {
         setState(() { _isInitialized = true; });
-        await _videoController!.play();
-        await _videoController!.setLooping(true);
+        _videoController!.play();
+        _videoController!.setLooping(true);
         WakelockPlus.enable();
       }
-    } catch (e) {
-      debugPrint("Video Error: $e");
-    }
+    }).catchError((e) => debugPrint("Video Star Error: $e"));
   }
 
   void _toggleVideoPlayback() {
@@ -114,16 +113,22 @@ class _StarPostDetailScreenState extends State<StarPostDetailScreen> with Single
     setState(() {
       if (_videoController!.value.isPlaying) { 
         _videoController!.pause(); 
-        _playPauseIcon = Icons.pause_rounded;
+        _playPauseIcon = Icons.play_arrow_rounded; // Fikisiye: play icon iyo upause-ije
         WakelockPlus.disable(); 
       } else { 
         _videoController!.play(); 
-        _playPauseIcon = Icons.play_arrow_rounded;
+        _playPauseIcon = Icons.pause_rounded;
         WakelockPlus.enable(); 
       }
       _showCenterIcon = true;
     });
     Future.delayed(const Duration(milliseconds: 800), () { if (mounted) setState(() => _showCenterIcon = false); });
+  }
+
+  String _formatImgUrl(String? url) {
+    if (url == null || url.isEmpty) return "";
+    if (url.contains('auth=')) return url;
+    return "${R2Service.workerUrl}${Uri.parse(url).path}?auth=${R2Service.workerSecretKey}";
   }
 
   @override
@@ -144,28 +149,25 @@ class _StarPostDetailScreenState extends State<StarPostDetailScreen> with Single
     return Scaffold(
       backgroundColor: Colors.black,
       body: Stack(fit: StackFit.expand, children: [
-          // 1. MEDIA LAYER (Photo Full-Res cyangwa Video)
           _buildMediaLayer(),
-          
           _buildGradientOverlay(),
 
-          // 2. TAP AREA (Gusa kuri Video)
           if (_isVideo)
             Positioned.fill(child: GestureDetector(behavior: HitTestBehavior.opaque, onTap: _toggleVideoPlayback, child: Container(color: Colors.transparent))),
 
-          // Spinner igihe video itaraba ready
+          // Indicator igaragara gusa niba video yatinze cyane
           if (_isVideo && !_isInitialized) 
-            const Center(child: CupertinoActivityIndicator(color: Colors.white, radius: 25)),
+            const Center(child: CupertinoActivityIndicator(color: Colors.white, radius: 20)),
 
           if (_isVideo && _showCenterIcon && _isInitialized) 
-            Center(child: Container(padding: const EdgeInsets.all(20), decoration: BoxDecoration(color: Colors.black26, shape: BoxShape.circle), child: Icon(_playPauseIcon, color: Colors.white, size: 80))),
+            Center(child: Container(padding: const EdgeInsets.all(20), decoration: const BoxDecoration(color: Colors.black26, shape: BoxShape.circle), child: Icon(_playPauseIcon == Icons.pause_rounded ? Icons.play_arrow_rounded : Icons.pause_rounded, color: Colors.white, size: 80))),
 
           if (postId.isNotEmpty) _buildFirebaseAdTicker(postId),
 
-          _buildLiveContentOverlay(postId, lang),
+          _buildStaticContentOverlay(postId, lang),
 
           Positioned(top: 45, left: 15, child: IconButton(
-            icon: const Icon(Icons.close, color: Colors.white, size: 32), 
+            icon: const Icon(Icons.arrow_back_ios_new, color: Colors.white, size: 28), 
             onPressed: () {
               _pauseVideo();
               Navigator.pop(context);
@@ -176,42 +178,33 @@ class _StarPostDetailScreenState extends State<StarPostDetailScreen> with Single
   }
 
   Widget _buildMediaLayer() {
-    // 1. Gushaka URL (Ifoto cyangwa Thumbnail)
     String rawImg = widget.postData[DatabaseHelper.colImageUrl] ?? widget.postData['imageUrl'] ?? widget.postData['thumbnailUrl'] ?? "";
-    String finalUrl = rawImg;
-    if (rawImg.isNotEmpty && !rawImg.contains('auth=')) {
-      final String path = Uri.parse(rawImg).path;
-      finalUrl = "${R2Service.workerUrl}$path?auth=${R2Service.workerSecretKey}";
-    }
+    String finalUrl = _formatImgUrl(rawImg);
 
     if (!_isVideo) {
-      // HANO HAKOSOWE: Niba ari ifoto, ihita yuzura screen yose neza mu buryo bushashagirye
       return finalUrl.isNotEmpty 
         ? CachedNetworkImage(
             imageUrl: finalUrl, 
             httpHeaders: {'X-Jembe-Auth': R2Service.workerSecretKey}, 
-            fit: BoxFit.cover, 
+            fit: BoxFit.contain, 
             width: double.infinity,
             height: double.infinity,
-            placeholder: (c,u) => const Center(child: CupertinoActivityIndicator(color: Colors.white24)),
-            errorWidget: (c,u,e) => Container(color: Colors.black)
+            fadeInDuration: Duration.zero,
+            placeholder: (c,u) => const SizedBox.shrink(),
           )
         : Container(color: Colors.black);
     }
 
-    // NIBA ARI VIDEO: Komeza na Thumbnail background + Video player
     return Stack(fit: StackFit.expand, children: [
+      // Thumbnail ifunguka vuba kurusha byose
       if (finalUrl.isNotEmpty) 
         CachedNetworkImage(
           imageUrl: finalUrl, 
           httpHeaders: {'X-Jembe-Auth': R2Service.workerSecretKey}, 
-          fit: BoxFit.cover,
-          errorWidget: (c,u,e) => Container(color: Colors.black)
+          fit: BoxFit.contain,
+          fadeInDuration: Duration.zero,
         ),
       
-      if (finalUrl.isNotEmpty)
-        BackdropFilter(filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10), child: Container(color: Colors.black.withValues(alpha: 0.2))),
-
       if (_isInitialized && _videoController != null) 
         Center(
           child: AspectRatio(
@@ -222,15 +215,8 @@ class _StarPostDetailScreenState extends State<StarPostDetailScreen> with Single
     ]);
   }
 
-  Widget _buildLiveContentOverlay(String postId, LanguageProvider lang) {
-    return StreamBuilder<DocumentSnapshot>(
-      stream: _firestore.collection('posts').doc(postId).snapshots(),
-      builder: (context, snapshot) {
-        Map<String, dynamic> data = widget.postData;
-        if (snapshot.hasData && snapshot.data!.exists) data = {...widget.postData, ...snapshot.data!.data() as Map<String, dynamic>};
-        return _buildUI(data, postId, lang);
-      },
-    );
+  Widget _buildStaticContentOverlay(String postId, LanguageProvider lang) {
+    return _buildUI(widget.postData, postId, lang);
   }
 
   Widget _buildUI(Map<String, dynamic> data, String postId, LanguageProvider lang) {
@@ -239,59 +225,42 @@ class _StarPostDetailScreenState extends State<StarPostDetailScreen> with Single
     final String content = (data['content'] ?? data[DatabaseHelper.colText] ?? "").toString().trim();
     final String userId = data[DatabaseHelper.colUserId] ?? data['userId'] ?? "";
 
-    final String fullText = title.isNotEmpty ? title : content;
-    String line1 = fullText; 
-    String line2 = "";
-    bool showReadMore = content.isNotEmpty || title.length > 25;
-
-    if (fullText.length > 20) {
-      int splitTarget = (fullText.length * 0.6).toInt();
-      int splitIndex = fullText.indexOf(' ', splitTarget);
-      if (splitIndex == -1 || splitIndex > fullText.length - 5) splitIndex = splitTarget;
-      line1 = fullText.substring(0, splitIndex).trim();
-      line2 = fullText.substring(splitIndex).trim();
-    }
-
     final TextStyle customTitleStyle = TextStyle(
-      color: Colors.white, fontSize: 12.5, fontWeight: FontWeight.w800, 
-      letterSpacing: -0.6, height: 1.0, 
-      shadows: const [Shadow(blurRadius: 10, color: Colors.black, offset: Offset(1, 1))]
+      color: Colors.white, fontSize: 13, fontWeight: FontWeight.w900, 
+      shadows: const [Shadow(blurRadius: 10, color: Colors.black)]
     );
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 35),
       child: Column(mainAxisAlignment: MainAxisAlignment.end, crossAxisAlignment: CrossAxisAlignment.start, children: [
-          if (line1.isNotEmpty)
+          if (title.isNotEmpty)
             Container(
-              padding: const EdgeInsets.all(10), 
-              decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.3), borderRadius: BorderRadius.circular(15)),
+              padding: const EdgeInsets.all(12), 
+              decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.4), borderRadius: BorderRadius.circular(15)),
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(line1, style: customTitleStyle),
-                const SizedBox(height: 5),
-                Text.rich(TextSpan(children: [
-                  TextSpan(text: line2.isEmpty ? "" : "$line2  ", style: customTitleStyle),
-                  if (showReadMore) WidgetSpan(alignment: PlaceholderAlignment.middle, child: GestureDetector(
+                Text(title, style: customTitleStyle),
+                if (content.isNotEmpty || title.length > 25) Padding(
+                  padding: const EdgeInsets.only(top: 8.0),
+                  child: GestureDetector(
                     onTap: () { _pauseVideo(); _showFullContent(title, content); },
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8), 
-                      decoration: BoxDecoration(color: Colors.greenAccent.withValues(alpha: 0.9), borderRadius: BorderRadius.circular(10), boxShadow: const [BoxShadow(color: Colors.black45, blurRadius: 6, offset: Offset(0, 3))]), 
-                      child: Text(PostTranslations.t('read_more', langCode), style: const TextStyle(color: Colors.black, fontSize: 13, fontWeight: FontWeight.w900, letterSpacing: 0.5))
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7), 
+                      decoration: BoxDecoration(color: Colors.greenAccent, borderRadius: BorderRadius.circular(10)), 
+                      child: Text(PostTranslations. t('read_more', langCode), style: const TextStyle(color: Colors.black, fontSize: 12, fontWeight: FontWeight.w900))
                     ),
-                  )),
-                ])),
+                  ),
+                ),
               ]),
             ),
           
-          // HANO HAKOSOWE: Erekana progress bar gusa niba ari VIDEO
           if (_isVideo && _isInitialized && _videoController != null)
             Padding(
-              padding: const EdgeInsets.only(top: 15, left: 5, right: 10, bottom: 5),
+              padding: const EdgeInsets.only(top: 15, bottom: 10, right: 10),
               child: SizedBox(
-                height: 20, 
+                height: 5, 
                 child: VideoProgressIndicator(
                   _videoController!,
                   allowScrubbing: true, 
-                  padding: const EdgeInsets.symmetric(vertical: 8),
                   colors: const VideoProgressColors(
                     playedColor: Colors.greenAccent,
                     bufferedColor: Colors.white24,
@@ -301,9 +270,8 @@ class _StarPostDetailScreenState extends State<StarPostDetailScreen> with Single
               ),
             ),
 
-          const SizedBox(height: 10),
           _buildUserPill(userId, data, postId),
-          const SizedBox(height: 25),
+          const SizedBox(height: 20),
           _buildStats(data),
       ]),
     );
@@ -313,15 +281,15 @@ class _StarPostDetailScreenState extends State<StarPostDetailScreen> with Single
     return StreamBuilder<DocumentSnapshot>(stream: _firestore.collection('users').doc(userId).snapshots(), builder: (context, userSnap) {
         final userData = userSnap.data?.data() as Map<String, dynamic>?;
         final String name = userData?['displayName'] ?? data['authorName'] ?? data['userName'] ?? "Star";
-        final String? img = userData?['photoUrl'] ?? data['authorPhotoUrl'] ?? data['userImageUrl'];
+        final String? img = _formatImgUrl(userData?['photoUrl'] ?? data['authorPhotoUrl'] ?? data['userImageUrl']);
         return Row(children: [
           Expanded(child: GestureDetector(
             onTap: () async { 
               _pauseVideo();
               await Navigator.push(context, MaterialPageRoute(builder: (c) => UserProfileScreen(userId: userId))); 
             }, 
-            child: Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6), decoration: BoxDecoration(color: Colors.greenAccent.withValues(alpha: 0.3), borderRadius: BorderRadius.circular(20), border: Border.all(color: Colors.greenAccent.withValues(alpha: 0.5), width: 1.2)), child: Row(mainAxisSize: MainAxisSize.min, children: [
-                CircleAvatar(radius: 12, backgroundColor: Colors.white10, backgroundImage: img != null ? CachedNetworkImageProvider(img) : null, child: img == null ? const Icon(Icons.person, size: 12, color: Colors.white) : null),
+            child: Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6), decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.5), borderRadius: BorderRadius.circular(20), border: Border.all(color: Colors.white24)), child: Row(mainAxisSize: MainAxisSize.min, children: [
+                CircleAvatar(radius: 12, backgroundColor: Colors.white10, backgroundImage: img != null && img.isNotEmpty ? CachedNetworkImageProvider(img) : null, child: img == null || img.isEmpty ? const Icon(Icons.person, size: 12, color: Colors.white) : null),
                 const SizedBox(width: 8), Flexible(child: Text("@$name", style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12), overflow: TextOverflow.ellipsis)),
                 const SizedBox(width: 6), const Icon(Icons.stars_rounded, color: Color(0xFFFFD700), size: 18),
               ])))),
@@ -349,22 +317,21 @@ class _StarPostDetailScreenState extends State<StarPostDetailScreen> with Single
   }
 
   Widget _buildStats(Map<String, dynamic> data) {
-    return Container(padding: const EdgeInsets.symmetric(vertical: 12), decoration: BoxDecoration(color: Colors.white.withOpacity(0.05), borderRadius: BorderRadius.circular(20)),
-      child: Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: [
+    return Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: [
           _statItem(Icons.favorite, "${data['likes'] ?? 0}", Colors.redAccent),
-          _statItem(Icons.chat_bubble_rounded, "${data['commentsCount'] ?? 0}", Colors.blueAccent),
-          _statItem(Icons.remove_red_eye, "${data['views'] ?? 0}", Colors.greenAccent),
-      ]));
+          _statItem(Icons.chat_bubble_outline_rounded, "${data['commentsCount'] ?? 0}", Colors.white),
+          _statItem(Icons.remove_red_eye_outlined, "${data['views'] ?? 0}", Colors.white),
+    ]);
   }
 
-  Widget _statItem(IconData icon, String val, Color col) => Row(children: [Icon(icon, color: col, size: 20), const SizedBox(width: 8), Text(val, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12))]);
+  Widget _statItem(IconData icon, String val, Color col) => Column(children: [Icon(icon, color: col, size: 28), const SizedBox(height: 4), Text(val, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12))]);
   
-  Widget _buildGradientOverlay() => Container(decoration: BoxDecoration(gradient: LinearGradient(colors: [Colors.black.withValues(alpha: 0.5), Colors.transparent, Colors.black.withValues(alpha: 0.9)], begin: Alignment.topCenter, end: Alignment.bottomCenter)));
+  Widget _buildGradientOverlay() => Container(decoration: BoxDecoration(gradient: LinearGradient(colors: [Colors.black.withValues(alpha: 0.5), Colors.transparent, Colors.black.withValues(alpha: 0.8)], begin: Alignment.topCenter, end: Alignment.bottomCenter)));
   
   void _showFullContent(String title, String content) { 
     showModalBottomSheet(context: context, backgroundColor: Colors.transparent, isScrollControlled: true, builder: (context) => Container(
-      height: MediaQuery.of(context).size.height * 0.75, padding: const EdgeInsets.all(25), 
-      decoration: const BoxDecoration(color: Color(0xFF0F172A), borderRadius: BorderRadius.vertical(top: Radius.circular(35))), 
+      height: MediaQuery.of(context).size.height * 0.7, padding: const EdgeInsets.all(25), 
+      decoration: const BoxDecoration(color: Color(0xFF1E293B), borderRadius: BorderRadius.vertical(top: Radius.circular(35))), 
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Center(child: Container(width: 45, height: 4, decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(10)))),
           const SizedBox(height: 25),

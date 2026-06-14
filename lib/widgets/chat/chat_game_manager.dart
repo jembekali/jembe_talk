@@ -1,4 +1,4 @@
-// lib/widgets/chat/chat_game_manager.dart (FIXED OVERFLOW & REMOVED REDUNDANT BUTTONS)
+// lib/widgets/chat/chat_game_manager.dart (VERSION 1.1 - SMOOTH TRANSITION & STABLE GAME OVERLAY)
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -36,7 +36,7 @@ class ChatGameManager extends StatelessWidget {
     Widget? gameWidget;
 
     // -------------------------------------------------------------------------
-    // 1. INVITATION MODE (Iyo uri gutegura ubutumire)
+    // 1. INVITATION MODE: Iyo uri gutegura ubutumire (Preview Board)
     // -------------------------------------------------------------------------
     if (isPreparingInvitation) {
       final previewBoard = List.generate(10, (row) {
@@ -50,32 +50,36 @@ class ChatGameManager extends StatelessWidget {
       });
 
       gameWidget = Container(
-        color: theme.colorScheme.surfaceVariant.withOpacity(0.4),
+        padding: const EdgeInsets.only(bottom: 15),
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surfaceVariant.withOpacity(0.4),
+          border: Border(bottom: BorderSide(color: theme.dividerColor.withOpacity(0.2))),
+        ),
         child: Column(
-          mainAxisSize: MainAxisSize.min, // ✅ Ibi bituma container itabyibuha cyane
+          mainAxisSize: MainAxisSize.min,
           children: [
-            // HEADER (Gahunda y'ubutumire)
+            // Header y'ubutumire
             SizedBox(
-              height: 45, // Nagabanyije height
+              height: 50,
               child: isWaitingForGameAcceptance
                   ? Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2)),
-                        const SizedBox(width: 10),
-                        Text(lang.t('dame_invitation_sent'), style: const TextStyle(fontSize: 13, fontStyle: FontStyle.italic)),
+                        const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+                        const SizedBox(width: 12),
+                        Text(lang.t('dame_invitation_sent'), 
+                          style: const TextStyle(fontSize: 14, fontStyle: FontStyle.italic, fontWeight: FontWeight.w500)),
                       ],
                     )
                   : Center(
                       child: Text(
                         lang.t('dame_send_invitation_header'), 
-                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)
                       )
                     ),
             ),
 
-            // IKIBAHO (DameGameWidget)
-            // ✅ Ubu DameGameWidget yakuwemo utubuto twayo imbere muri version 15.5
+            // Ikibaho cy'ubutumire
             DameGameWidget(
               key: const ValueKey('invitation_preview'),
               chatRoomID: chatRoomID,
@@ -84,53 +88,49 @@ class ChatGameManager extends StatelessWidget {
               isWaiting: isWaitingForGameAcceptance,
             ),
 
-            // FOOTER BUTTONS (Zazamutse kugira ngo overflow ishira)
-            Padding(
-              padding: const EdgeInsets.only(top: 8, bottom: 12),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: [
-                  // BUTTON OYA / CANCEL
+            // Buto zo kwemeza cyangwa guhagarika ubutumire
+            const SizedBox(height: 10),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                ElevatedButton.icon(
+                  onPressed: onCancelInvitation,
+                  icon: const Icon(Icons.close_rounded, size: 18),
+                  label: Text(lang.t('dialog_no')), 
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.red.shade700,
+                    foregroundColor: Colors.white,
+                    elevation: 2,
+                    padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 10),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                  ),
+                ),
+                if (!isWaitingForGameAcceptance)
                   ElevatedButton.icon(
-                    onPressed: onCancelInvitation,
-                    icon: const Icon(Icons.close, size: 18),
-                    label: Text(lang.t('dialog_no')), 
+                    onPressed: onSendInvitation,
+                    icon: const Icon(Icons.send_rounded, size: 18),
+                    label: Text(lang.t('dame_send_invitation_button')),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.red.shade700,
+                      backgroundColor: Colors.green.shade600,
                       foregroundColor: Colors.white,
                       elevation: 2,
-                      padding: const EdgeInsets.symmetric(horizontal: 25, vertical: 8),
+                      padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 10),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
                     ),
                   ),
-                  // BUTTON YEGO / SEND
-                  if (!isWaitingForGameAcceptance)
-                    ElevatedButton.icon(
-                      onPressed: onSendInvitation,
-                      icon: const Icon(Icons.send, size: 18),
-                      label: Text(lang.t('dame_send_invitation_button')),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.green.shade600,
-                        foregroundColor: Colors.white,
-                        elevation: 2,
-                        padding: const EdgeInsets.symmetric(horizontal: 25, vertical: 8),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                      ),
-                    ),
-                ],
-              ),
+              ],
             ),
           ],
         ),
       );
     } 
     // -------------------------------------------------------------------------
-    // 2. ACTIVE GAME MODE (Iyo umukino uri kuba)
+    // 2. ACTIVE GAME MODE: Iyo umukino uri kuba (Live Board)
     // -------------------------------------------------------------------------
     else if (currentGameData != null && 
             (currentGameData!['status'] == 'active' || currentGameData!['status'] == 'finished')) {
       gameWidget = DameGameWidget(
-        key: ValueKey('active_game_${currentGameData!['id'] ?? 'live'}'),
+        key: ValueKey('active_game_${chatRoomID}'),
         chatRoomID: chatRoomID,
         gameData: currentGameData!,
         opponentDisplayName: receiverEmail,
@@ -138,14 +138,17 @@ class ChatGameManager extends StatelessWidget {
       );
     }
 
-    // ANIMATION: Slide down effect
+    // ✅ ANIMATION: Slide down effect (Kuva hejuru uza hasi)
     return AnimatedSwitcher(
-      duration: const Duration(milliseconds: 600),
+      duration: const Duration(milliseconds: 700),
+      switchInCurve: Curves.easeOutBack,
+      switchOutCurve: Curves.easeIn,
       transitionBuilder: (Widget child, Animation<double> animation) {
         return SlideTransition(
-          position: Tween<Offset>(begin: const Offset(0.0, -1.0), end: Offset.zero).animate(
-            CurvedAnimation(parent: animation, curve: Curves.easeOutCubic)
-          ),
+          position: Tween<Offset>(
+            begin: const Offset(0.0, -1.2), // Tura hanze gato ya screen
+            end: Offset.zero
+          ).animate(animation),
           child: child,
         );
       },
